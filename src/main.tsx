@@ -5,16 +5,21 @@ import { Capacitor } from '@capacitor/core'
 import './index.css'
 import App from './App.tsx'
 
-// 初始化状态栏（Android 原生平台）
 function StatusBarInit() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
-      // 不覆盖 WebView，让状态栏有独立背景色
-      StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {})
-      // 设置状态栏文字为亮色（深色背景）
+      StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {})
       StatusBar.setStyle({ style: Style.Dark }).catch(() => {})
-      // 设置状态栏背景色与应用主题一致
-      StatusBar.setBackgroundColor({ color: '#0a0a1a' }).catch(() => {})
+      // 获取状态栏高度并设置 CSS 变量
+      // Android 状态栏通常 24dp，在 WebView 中通过 JS 获取
+      const setStatusBarHeight = () => {
+        // 使用 window.innerHeight 和屏幕高度的差值来计算
+        // 或者直接使用固定值
+        const height = window.innerWidth < 600 ? 24 : 0; // dp
+        const px = height * (window.devicePixelRatio || 2);
+        document.documentElement.style.setProperty('--status-bar-height', px + 'px')
+      }
+      setStatusBarHeight()
     }
   }, [])
   return null

@@ -66,6 +66,24 @@ html, body {
   margin: 0;
 }
 
+/* Android 状态栏背景 - 用 ::before 伪元素在 html 上绘制 */
+html::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--status-bar-height, 0px);
+  background: var(--bg);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+/* Android 原生平台内容区域需要为状态栏留出空间 */
+body {
+  padding-top: var(--status-bar-height, 0px) !important;
+}
+
 [data-theme="dark"] body {
   background: #050510;
 }

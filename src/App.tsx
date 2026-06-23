@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -34,6 +34,28 @@ export default function App() {
 
   const player = usePlayer();
   const isNative = Capacitor.isNativePlatform();
+
+  // 调试日志系统
+  const [debugLogs, setDebugLogs] = useState<string[]>([]);
+  const [showDebug, setShowDebug] = useState(false);
+  const debugLogRef = useRef<(msg: string) => void>(() => {});
+
+  debugLogRef.current = (msg: string) => {
+    const time = new Date().toLocaleTimeString();
+    setDebugLogs(prev => [...prev.slice(-50), `[${time}] ${msg}`]);
+  };
+
+  // 在组件 mount 时输出初始信息
+  useEffect(() => {
+    if (isNative) {
+      debugLogRef.current(`平台: Native (Capacitor)`);
+      debugLogRef.current(`主题: ${effectiveTheme}`);
+      debugLogRef.current(`WebView URL: ${window.location.href}`);
+      debugLogRef.current(`UserAgent: ${navigator.userAgent.substring(0, 80)}...`);
+    } else {
+      debugLogRef.current(`平台: Web`);
+    }
+  }, []);
 
   // Native platform initialization - sync status bar with theme
   useEffect(() => {
@@ -101,7 +123,8 @@ export default function App() {
         goBack();
         return;
       }
-      // Priority 3: On home page, let system handle (exit app)
+      // Priority 3: On home page, exit app
+      CapApp.exitApp();
     };
 
     const listenerPromise = CapApp.addListener('backButton', handleBackButton);
@@ -441,6 +464,62 @@ export default function App() {
           visible={toast.visible}
           onClose={hideToast}
         />
+
+        {/* Debug Panel */}
+        {isNative && (
+          <>
+            <button
+              onClick={() => setShowDebug(!showDebug)}
+              style={{
+                position: 'absolute',
+                bottom: '16px',
+                right: '16px',
+                zIndex: 10000,
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                background: 'rgba(93, 190, 157, 0.8)',
+                border: 'none',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+              }}
+            >
+              D
+            </button>
+            {showDebug && (
+              <div style={{
+                position: 'absolute',
+                bottom: '60px',
+                right: '16px',
+                left: '16px',
+                maxHeight: '40vh',
+                background: 'rgba(0,0,0,0.9)',
+                borderRadius: '12px',
+                padding: '12px',
+                zIndex: 10000,
+                overflow: 'auto',
+                fontSize: '11px',
+                fontFamily: 'monospace',
+                color: '#0f0',
+                border: '1px solid rgba(93, 190, 157, 0.3)',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                  <span style={{ color: '#5DBE9D', fontWeight: 700 }}>Debug Log</span>
+                  <button onClick={() => setDebugLogs([])} style={{ background: 'none', border: 'none', color: '#888', fontSize: '10px', cursor: 'pointer' }}>Clear</button>
+                </div>
+                {debugLogs.map((log, i) => (
+                  <div key={i} style={{ marginBottom: '2px', wordBreak: 'break-all' }}>{log}</div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
