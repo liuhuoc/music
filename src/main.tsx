@@ -13,8 +13,8 @@ function StatusBarInit() {
       StatusBar.setOverlaysWebView({ overlay: true }).catch(() => {})
       // 设置状态栏文字为亮色（深色背景）
       StatusBar.setStyle({ style: Style.Dark }).catch(() => {})
-      // Android 状态栏高度约 48px，直接设置 CSS 变量
-      document.documentElement.style.setProperty('--safe-area-top', '48px')
+      // Android 状态栏高度约 24-28dp（约 32px），直接设置 CSS 变量
+      document.documentElement.style.setProperty('--safe-area-top', '32px')
     }
   }, [])
   return null

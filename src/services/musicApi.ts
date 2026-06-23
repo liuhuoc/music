@@ -1,8 +1,11 @@
 // 网易云音乐 API 服务层
-// 使用公共 API: https://api.bugpk.com/api/163_music
-// 如果 API 不可用，自动降级为模拟数据
+// 使用网易云官方 API: https://music.163.com/api
 
-const API_BASE = 'https://api.bugpk.com/api/163_music';
+const API_BASE = 'https://music.163.com/api';
+const COMMON_HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Referer': 'https://music.163.com/',
+};
 
 export interface NeteaseSong {
   id: number;
@@ -33,15 +36,10 @@ export interface ToplistItem {
 }
 
 // 通用请求封装
-async function apiGet<T>(params: Record<string, string>): Promise<T> {
-  const queryString = new URLSearchParams(params).toString();
-  const url = `${API_BASE}?${queryString}`;
-
+async function apiFetch<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-    },
+    headers: COMMON_HEADERS,
   });
 
   if (!response.ok) {
@@ -59,116 +57,93 @@ async function apiGet<T>(params: Record<string, string>): Promise<T> {
 
 // 搜索歌曲
 export async function searchSongs(keywords: string, limit: number = 30, offset: number = 0): Promise<SearchResult> {
-  const data = await apiGet<{
-    data: {
+  const url = `${API_BASE}/search/get/web?csrf_token=&s=${encodeURIComponent(keywords)}&type=1&offset=${offset}&total=true&limit=${limit}`;
+  const data = await apiFetch<{
+    result: {
       songs: Array<{
         id: number;
         name: string;
-        artists: string;
-        album: string;
-        picUrl: string;
+        artists: Array<{ name: string }>;
+        album: { name: string; picUrl: string };
         duration: number;
       }>;
-      total: number;
+      songCount: number;
     }
-  }>({
-    type: 'search',
-    s: keywords,
-    limit: String(limit),
-    offset: String(offset),
-  });
+  }>(url);
 
-  // 转换为标准格式
-  const songs = data.data.songs.map(s => ({
+  const songs = (data.result?.songs || []).map(s => ({
     id: s.id,
     name: s.name,
-    artists: s.artists.split(/[,、]/).map(name => ({ name: name.trim() })),
-    album: { name: s.album, picUrl: s.picUrl },
+    artists: s.artists.map(a => ({ name: a.name })),
+    album: { name: s.album.name, picUrl: s.album.picUrl },
     duration: s.duration,
   }));
 
   return {
     songs,
-    songCount: data.data.total,
+    songCount: data.result?.songCount || 0,
   };
 }
 
-// 获取歌曲播放URL
+// 获取歌曲播放URL（使用网易云外链）
 export async function getSongUrl(id: number): Promise<SongUrl | null> {
-  const data = await apiGet<{
-    data: {
-      url: string;
-      size: number;
-      type: string;
-      time: number;
+  try {
+    // 网易云外链播放地址
+    const url = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
+    // 验证链接是否可用
+    const check = await fetch(url, {
+      method: 'HEAD',
+      headers: COMMON_HEADERS,
+      redirect: 'manual',
+    });
+    if (check.status === 302 || check.status === 200) {
+      return {
+        id,
+        url,
+        type: 'mp3',
+        size: 0,
+        time: 0,
+      };
     }
-  }>({
-    type: 'url',
-    id: String(id),
-    level: 'exhigh',
-  });
-
-  if (!data.data?.url) return null;
-
-  return {
-    id,
-    url: data.data.url,
-    type: data.data.type || 'mp3',
-    size: data.data.size || 0,
-    time: data.data.time || 0,
-  };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // 获取歌曲详情
 export async function getSongDetail(ids: number[]): Promise<NeteaseSong[]> {
-  const results: NeteaseSong[] = [];
+  const url = `${API_BASE}/song/detail?ids=[${ids.join(',')}]`;
+  const data = await apiFetch<{
+    songs: Array<{
+      id: number;
+      name: string;
+      artists: Array<{ name: string }>;
+      album: { name: string; picUrl: string };
+      duration: number;
+    }>
+  }>(url);
 
-  for (const id of ids) {
-    try {
-      const data = await apiGet<{
-        data: {
-          id: number;
-          name: string;
-          album: string;
-          singer: string;
-          picimg: string;
-        }
-      }>({
-        type: 'song',
-        id: String(id),
-      });
-
-      if (data.data) {
-        results.push({
-          id: data.data.id,
-          name: data.data.name,
-          artists: data.data.singer.split(/[,、]/).map(name => ({ name: name.trim() })),
-          album: { name: data.data.album, picUrl: data.data.picimg },
-          duration: 0,
-        });
-      }
-    } catch {
-      // 忽略单个歌曲错误
-    }
-  }
-
-  return results;
+  return (data.songs || []).map(s => ({
+    id: s.id,
+    name: s.name,
+    artists: s.artists.map(a => ({ name: a.name })),
+    album: { name: s.album.name, picUrl: s.album.picUrl },
+    duration: s.duration,
+  }));
 }
 
 // 获取歌词
 export async function getLyric(id: number): Promise<string> {
   try {
-    const data = await apiGet<{
-      data: {
-        lyric: string;
-      }
-    }>({
-      type: 'lyric',
-      id: String(id),
-    });
+    const url = `${API_BASE}/song/lyric?id=${id}&lv=1&kv=1&tv=-1`;
+    const data = await apiFetch<{
+      lrc?: { lyric: string };
+      tlyric?: { lyric: string };
+    }>(url);
 
-    if (data.data?.lyric) {
-      return data.data.lyric;
+    if (data.lrc?.lyric) {
+      return data.lrc.lyric;
     }
   } catch {
     // 使用默认歌词
@@ -179,18 +154,17 @@ export async function getLyric(id: number): Promise<string> {
 
 // 获取排行榜列表
 export async function getToplists(): Promise<ToplistItem[]> {
-  const data = await apiGet<{
-    data: Array<{
+  const url = `${API_BASE}/toplist`;
+  const data = await apiFetch<{
+    list: Array<{
       id: number;
       name: string;
       coverImgUrl: string;
       description: string;
     }>
-  }>({
-    type: 'playlist',
-  });
+  }>(url);
 
-  return data.data.map(item => ({
+  return (data.list || []).map(item => ({
     id: item.id,
     name: item.name,
     coverImgUrl: item.coverImgUrl,
@@ -200,64 +174,44 @@ export async function getToplists(): Promise<ToplistItem[]> {
 
 // 获取排行榜详情
 export async function getToplistDetail(id: number): Promise<NeteaseSong[]> {
-  try {
-    const data = await apiGet<{
-      data: {
-        songs?: Array<{
-          id: number;
-          name: string;
-          artists?: string;
-          artist?: string;
-          album?: string;
-          picUrl?: string;
-          duration?: number;
-        }>;
-        tracks?: Array<{
-          id: number;
-          name: string;
-          artists?: string;
-          artist?: string;
-          album?: string;
-          picUrl?: string;
-          duration?: number;
-        }>;
-      }
-    }>({
-      type: 'playlist',
-      id: String(id),
-    });
+  const url = `${API_BASE}/playlist/detail?id=${id}`;
+  const data = await apiFetch<{
+    result: {
+      tracks: Array<{
+        id: number;
+        name: string;
+        artists: Array<{ name: string }>;
+        album: { name: string; picUrl: string };
+        duration: number;
+      }>
+    }
+  }>(url);
 
-    const songs = data.data?.songs || data.data?.tracks || [];
-    return songs.map(s => ({
-      id: s.id,
-      name: s.name,
-      artists: (s.artists || s.artist || '未知').split(/[,、]/).map(name => ({ name: name.trim() })),
-      album: { name: s.album || '未知专辑', picUrl: s.picUrl || '' },
-      duration: s.duration || 0,
-    }));
-  } catch {
-    return [];
-  }
+  const tracks = data.result?.tracks || [];
+  return tracks.map(t => ({
+    id: t.id,
+    name: t.name,
+    artists: t.artists.map(a => ({ name: a.name })),
+    album: { name: t.album.name, picUrl: t.album.picUrl },
+    duration: t.duration,
+  }));
 }
 
 // 获取热门搜索
 export async function getHotSearch(): Promise<string[]> {
   try {
-    const data = await apiGet<{
-      data: Array<{
-        searchWord: string;
-        keyword?: string;
-      }>
-    }>({
-      type: 'json',
-    });
+    const url = `${API_BASE}/search/hot`;
+    const data = await apiFetch<{
+      result: {
+        hots: Array<{
+          first: string;
+        }>
+      }
+    }>(url);
 
-    if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-      return data.data.slice(0, 10).map(item =>
-        item.searchWord || (item as Record<string, string>).keyword || ''
-      ).filter(Boolean);
+    if (data.result?.hots) {
+      return data.result.hots.slice(0, 10).map(h => h.first);
     }
-
     return [];
   } catch {
     return [];
