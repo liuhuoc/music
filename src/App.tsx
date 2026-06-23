@@ -290,6 +290,8 @@ export default function App() {
         overflow: 'hidden',
         boxShadow: isNative ? 'none' : '0 0 0 12px #1a1a2e, 0 0 0 14px #333, 0 20px 60px rgba(0,0,0,0.3)',
         borderRadius: '0',
+        // Android 顶部安全区域：为状态栏留出空间
+        paddingTop: isNative ? 'var(--safe-area-top)' : '0',
       }}>
         {/* Main Content */}
         <div style={{
