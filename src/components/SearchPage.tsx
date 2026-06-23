@@ -1,8 +1,14 @@
-import { useState } from 'react';
-import { mockSongs, hotSearches } from '../data/songs';
-import { IconChevronLeft, IconSearch, IconFlame, IconClock, IconMore, IconTrend } from './Icons';
-import { searchAndGetFullSongs } from '../services/musicApi';
+import { useState, useEffect } from 'react';
+import { mockSongs } from '../data/songs';
+import { IconChevronLeft, IconSearch, IconClock, IconMore, IconTrend } from './Icons';
+import { searchAndGetFullSongs, getHotSearch } from '../services/musicApi';
 import type { Song } from '../data/songs';
+
+// 默认热门搜索（API 不可用时使用）
+const defaultHotSearches = [
+  '周杰伦', '林俊杰', '邓紫棋', '薛之谦', '陈奕迅',
+  '毛不易', '周深', '华晨宇', 'Taylor Swift', 'Adele'
+];
 
 interface SearchPageProps {
   onNavigate: (page: string, data?: unknown) => void;
@@ -12,12 +18,28 @@ interface SearchPageProps {
 export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
   const [activeTab, setActiveTab] = useState<'hot' | 'history'>('hot');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchHistory, setSearchHistory] = useState<string[]>(['周杰伦', '海屿你', '小半']);
+  const [searchHistory, setSearchHistory] = useState<string[]>([]);
+  const [hotSearchList, setHotSearchList] = useState<string[]>(defaultHotSearches);
   const [showResults, setShowResults] = useState(false);
   const [results, setResults] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [usingFallback, setUsingFallback] = useState(false);
+
+  // 加载热门搜索
+  useEffect(() => {
+    const loadHotSearch = async () => {
+      try {
+        const hotWords = await getHotSearch();
+        if (hotWords.length > 0) {
+          setHotSearchList(hotWords);
+        }
+      } catch {
+        // 使用默认列表
+      }
+    };
+    loadHotSearch();
+  }, []);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -393,10 +415,10 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
         ) : activeTab === 'hot' ? (
           /* Hot Searches */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {hotSearches.map((item, i) => (
+            {hotSearchList.map((title, i) => (
               <div
-                key={item.rank}
-                onClick={() => handleHotClick(item.title)}
+                key={i}
+                onClick={() => handleHotClick(title)}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -418,7 +440,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                   width: '32px',
                   height: '32px',
                   borderRadius: '10px',
-                  background: getRankColor(item.rank),
+                  background: getRankColor(i + 1),
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -426,9 +448,9 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                   fontSize: '14px',
                   fontWeight: 700,
                   flexShrink: 0,
-                  boxShadow: item.rank <= 3 ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                  boxShadow: i < 3 ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
                 }}>
-                  {item.rank}
+                  {i + 1}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
@@ -436,31 +458,8 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                     fontWeight: 600,
                     color: 'var(--text-primary)',
                   }}>
-                    {item.title}
+                    {title}
                   </div>
-                  {item.heat > 0 && (
-                    <div style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '4px',
-                      marginTop: '3px',
-                    }}>
-                      {Array.from({ length: item.heat }).map((_, j) => (
-                        <IconFlame key={j} size={12} color={
-                          item.heat === 3 ? '#EF4444' :
-                          item.heat === 2 ? '#F59E0B' : '#3B82F6'
-                        } />
-                      ))}
-                      <span style={{
-                        fontSize: '11px',
-                        color: item.heat === 3 ? '#EF4444' :
-                               item.heat === 2 ? '#F59E0B' : '#3B82F6',
-                        fontWeight: 500,
-                      }}>
-                        {item.label}
-                      </span>
-                    </div>
-                  )}
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="m9 18 6-6-6-6"/>

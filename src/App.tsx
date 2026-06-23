@@ -88,6 +88,14 @@ export default function App() {
         setShowTimer(false);
         return;
       }
+      if (showQueue) {
+        setShowQueue(false);
+        if (queueFromFullPlayer) {
+          setQueueFromFullPlayer(false);
+          setShowFullPlayer(true);
+        }
+        return;
+      }
       // Priority 2: Navigate back
       if (page !== 'home') {
         goBack();
@@ -100,7 +108,7 @@ export default function App() {
     return () => {
       listenerPromise.then((l: PluginListenerHandle) => l.remove());
     };
-  }, [isNative, showFullPlayer, showActionSheet, showComments, showTimer, page, goBack]);
+  }, [isNative, showFullPlayer, showActionSheet, showComments, showTimer, showQueue, queueFromFullPlayer, page, goBack]);
 
   const handleNavigate = useCallback((target: string, data?: unknown) => {
     if (target === 'home') {

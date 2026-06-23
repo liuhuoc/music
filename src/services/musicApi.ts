@@ -200,29 +200,68 @@ export async function getToplists(): Promise<ToplistItem[]> {
 
 // 获取排行榜详情
 export async function getToplistDetail(id: number): Promise<NeteaseSong[]> {
-  const data = await apiGet<{
-    data: {
-      songs: Array<{
-        id: number;
-        name: string;
-        artists: string;
-        album: string;
-        picUrl: string;
-        duration: number;
-      }>;
-    }
-  }>({
-    type: 'playlist',
-    id: String(id),
-  });
+  try {
+    const data = await apiGet<{
+      data: {
+        songs?: Array<{
+          id: number;
+          name: string;
+          artists?: string;
+          artist?: string;
+          album?: string;
+          picUrl?: string;
+          duration?: number;
+        }>;
+        tracks?: Array<{
+          id: number;
+          name: string;
+          artists?: string;
+          artist?: string;
+          album?: string;
+          picUrl?: string;
+          duration?: number;
+        }>;
+      }
+    }>({
+      type: 'playlist',
+      id: String(id),
+    });
 
-  return (data.data.songs || []).map(s => ({
-    id: s.id,
-    name: s.name,
-    artists: s.artists.split(/[,、]/).map(name => ({ name: name.trim() })),
-    album: { name: s.album, picUrl: s.picUrl },
-    duration: s.duration,
-  }));
+    const songs = data.data?.songs || data.data?.tracks || [];
+    return songs.map(s => ({
+      id: s.id,
+      name: s.name,
+      artists: (s.artists || s.artist || '未知').split(/[,、]/).map(name => ({ name: name.trim() })),
+      album: { name: s.album || '未知专辑', picUrl: s.picUrl || '' },
+      duration: s.duration || 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+// 获取热门搜索
+export async function getHotSearch(): Promise<string[]> {
+  try {
+    const data = await apiGet<{
+      data: Array<{
+        searchWord: string;
+        keyword?: string;
+      }>
+    }>({
+      type: 'json',
+    });
+
+    if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+      return data.data.slice(0, 10).map(item =>
+        item.searchWord || (item as Record<string, string>).keyword || ''
+      ).filter(Boolean);
+    }
+
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 // 将网易云歌曲转换为应用内 Song 格式
