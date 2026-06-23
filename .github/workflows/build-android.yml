@@ -12,11 +12,11 @@ on:
       build_type:
         description: 'Build type'
         required: true
-        default: 'debug'
+        default: 'release'
         type: choice
         options:
-          - debug
           - release
+          - debug
 
 jobs:
   build-android:
@@ -66,29 +66,29 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
-      # Debug Build
+      # Debug Build (only when explicitly selected via manual trigger)
       - name: Build Debug APK
-        if: github.event.inputs.build_type != 'release' && !startsWith(github.ref, 'refs/tags/v')
+        if: github.event.inputs.build_type == 'debug'
         run: |
           cd android
           ./gradlew assembleDebug
 
       - name: Upload Debug APK
-        if: github.event.inputs.build_type != 'release' && !startsWith(github.ref, 'refs/tags/v')
+        if: github.event.inputs.build_type == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: android-debug-apk
+          name: music-player-debug
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      # Release Build with Signing (when tag is pushed or release is selected)
+      # Release Build with Signing (default for push to main, tag push, and manual release trigger)
       - name: Decode Keystore
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        if: github.event.inputs.build_type != 'debug'
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
 
       - name: Build Signed Release APK
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        if: github.event.inputs.build_type != 'debug'
         run: |
           cd android
           ./gradlew assembleRelease \
@@ -98,10 +98,10 @@ jobs:
             -Pandroid.injected.signing.key.password=${{ secrets.ANDROID_KEY_PASSWORD }}
 
       - name: Upload Release APK
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        if: github.event.inputs.build_type != 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: android-release-apk
+          name: music-player-release
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 90
 
@@ -120,5 +120,5 @@ jobs:
 
       # Cleanup keystore
       - name: Cleanup Keystore
-        if: always() && (startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release')
+        if: always() && github.event.inputs.build_type != 'debug'
         run: rm -f android/app/keystore.jks
