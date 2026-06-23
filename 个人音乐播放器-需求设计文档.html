@@ -1,0 +1,1434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>个人音乐播放器 - 需求设计文档</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap');
+
+        :root {
+            --primary: #5DBE9D;
+            --primary-dark: #4A9E80;
+            --primary-light: #E8F5F0;
+            --bg: #FAFBFC;
+            --card: #FFFFFF;
+            --text: #1A1A2E;
+            --text-secondary: #6B7280;
+            --border: #E5E7EB;
+            --accent-red: #EF4444;
+            --accent-orange: #F59E0B;
+            --accent-blue: #3B82F6;
+            --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
+            --radius: 12px;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.8;
+            font-size: 15px;
+        }
+
+        /* Cover */
+        .cover {
+            background: linear-gradient(135deg, #1A1A2E 0%, #16213E 50%, #0F3460 100%);
+            padding: 80px 40px 60px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        .cover::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 70%, rgba(93,190,157,0.15) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 30%, rgba(93,190,157,0.1) 0%, transparent 50%);
+            animation: float 20s ease-in-out infinite;
+        }
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(-20px, 20px); }
+        }
+        .cover-content { position: relative; z-index: 1; }
+        .cover-icon {
+            width: 80px; height: 80px;
+            background: var(--primary);
+            border-radius: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 24px;
+            font-size: 36px;
+            box-shadow: 0 8px 32px rgba(93,190,157,0.4);
+        }
+        .cover h1 {
+            color: #fff;
+            font-size: 36px;
+            font-weight: 900;
+            letter-spacing: -0.5px;
+            margin-bottom: 12px;
+        }
+        .cover .subtitle {
+            color: rgba(255,255,255,0.6);
+            font-size: 16px;
+            font-weight: 300;
+        }
+        .cover .meta {
+            margin-top: 32px;
+            display: flex;
+            justify-content: center;
+            gap: 32px;
+            flex-wrap: wrap;
+        }
+        .cover .meta-item {
+            color: rgba(255,255,255,0.5);
+            font-size: 13px;
+        }
+        .cover .meta-item span {
+            color: rgba(255,255,255,0.8);
+            font-weight: 500;
+        }
+
+        /* Container */
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 24px;
+        }
+
+        /* TOC */
+        .toc {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin: -40px auto 40px;
+            box-shadow: var(--shadow-lg);
+            position: relative;
+            z-index: 2;
+        }
+        .toc h2 {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            color: var(--text);
+        }
+        .toc-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 8px;
+        }
+        .toc a {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .toc a:hover {
+            background: var(--primary-light);
+            color: var(--primary-dark);
+        }
+        .toc .num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px; height: 24px;
+            border-radius: 6px;
+            background: var(--bg);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--primary);
+            flex-shrink: 0;
+        }
+
+        /* Sections */
+        .section {
+            margin-bottom: 48px;
+        }
+        .section-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+            padding-bottom: 16px;
+            border-bottom: 2px solid var(--primary-light);
+        }
+        .section-num {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 36px; height: 36px;
+            border-radius: 10px;
+            background: var(--primary);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+        .section-header h2 {
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-sm);
+            border: 1px solid var(--border);
+        }
+        .card h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            color: var(--text);
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+        thead th {
+            background: var(--bg);
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 2px solid var(--border);
+        }
+        tbody td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }
+        tbody tr:hover { background: var(--primary-light); }
+        tbody tr:last-child td { border-bottom: none; }
+
+        /* Tags */
+        .tag {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .tag-green { background: var(--primary-light); color: var(--primary-dark); }
+        .tag-red { background: #FEE2E2; color: #DC2626; }
+        .tag-blue { background: #DBEAFE; color: #2563EB; }
+        .tag-orange { background: #FEF3C7; color: #D97706; }
+        .tag-gray { background: #F3F4F6; color: #6B7280; }
+
+        /* Priority */
+        .p0 { color: var(--accent-red); font-weight: 700; }
+        .p1 { color: var(--accent-orange); font-weight: 600; }
+        .p2 { color: var(--accent-blue); font-weight: 500; }
+
+        /* Images */
+        .img-wrapper {
+            border-radius: var(--radius);
+            overflow: hidden;
+            margin: 20px 0;
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-md);
+        }
+        .img-wrapper img {
+            width: 100%;
+            display: block;
+        }
+        .img-caption {
+            padding: 12px 16px;
+            background: var(--bg);
+            font-size: 13px;
+            color: var(--text-secondary);
+            text-align: center;
+        }
+
+        /* Mermaid */
+        .mermaid-wrapper {
+            background: var(--card);
+            border-radius: var(--radius);
+            padding: 32px;
+            margin: 20px 0;
+            border: 1px solid var(--border);
+            overflow-x: auto;
+        }
+        .mermaid-wrapper svg { max-width: 100%; height: auto; }
+
+        /* Lists */
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+        }
+        .feature-list li:last-child { border-bottom: none; }
+        .feature-list .icon {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--primary);
+            margin-top: 8px;
+            flex-shrink: 0;
+        }
+
+        /* Info blocks */
+        .info-block {
+            background: var(--primary-light);
+            border-left: 4px solid var(--primary);
+            border-radius: 0 8px 8px 0;
+            padding: 16px 20px;
+            margin: 16px 0;
+            font-size: 14px;
+        }
+        .info-block.warning {
+            background: #FEF3C7;
+            border-left-color: var(--accent-orange);
+        }
+
+        /* Subsection */
+        .subsection {
+            margin-top: 32px;
+        }
+        .subsection h3 {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            padding-left: 12px;
+            border-left: 3px solid var(--primary);
+        }
+        .subsection h4 {
+            font-size: 15px;
+            font-weight: 600;
+            margin: 16px 0 8px;
+            color: var(--text-secondary);
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 40px 0;
+            color: var(--text-secondary);
+            font-size: 13px;
+            border-top: 1px solid var(--border);
+            margin-top: 60px;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .cover { padding: 60px 20px 40px; }
+            .cover h1 { font-size: 28px; }
+            .toc { padding: 24px; margin: -30px 16px 30px; }
+            .container { padding: 0 16px; }
+            table { font-size: 13px; }
+            thead th, tbody td { padding: 8px 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Cover -->
+<div class="cover">
+    <div class="cover-content">
+        <div class="cover-icon">&#9835;</div>
+        <h1>个人音乐播放器</h1>
+        <p class="subtitle">需求设计文档 v1.0</p>
+        <div class="meta">
+            <div class="meta-item">文档类型 <span>产品需求设计文档 (PRD)</span></div>
+            <div class="meta-item">创建日期 <span>2026-06-22</span></div>
+            <div class="meta-item">产品类型 <span>移动端音乐播放应用</span></div>
+            <div class="meta-item">目标平台 <span>Android / iOS</span></div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+<!-- TOC -->
+<div class="toc">
+    <h2>文档目录</h2>
+    <div class="toc-grid">
+        <a href="#s1"><span class="num">1</span>需求背景与目标</a>
+        <a href="#s2"><span class="num">2</span>用户画像与场景</a>
+        <a href="#s3"><span class="num">3</span>产品功能总览</a>
+        <a href="#s4"><span class="num">4</span>首页 - 排行榜</a>
+        <a href="#s5"><span class="num">5</span>搜索功能</a>
+        <a href="#s6"><span class="num">6</span>搜索结果 / 歌手页</a>
+        <a href="#s7"><span class="num">7</span>歌曲操作菜单</a>
+        <a href="#s8"><span class="num">8</span>迷你播放器</a>
+        <a href="#s9"><span class="num">9</span>全屏播放器</a>
+        <a href="#s10"><span class="num">10</span>播放队列</a>
+        <a href="#s11"><span class="num">11</span>评论功能</a>
+        <a href="#s12"><span class="num">12</span>定时暂停</a>
+        <a href="#s13"><span class="num">13</span>收藏功能</a>
+        <a href="#s14"><span class="num">14</span>下载管理</a>
+        <a href="#s15"><span class="num">15</span>播放模式</a>
+        <a href="#s16"><span class="num">16</span>分享功能</a>
+        <a href="#s17"><span class="num">17</span>数据模型</a>
+        <a href="#s18"><span class="num">18</span>技术架构</a>
+        <a href="#s19"><span class="num">19</span>非功能需求</a>
+        <a href="#s20"><span class="num">20</span>迭代计划</a>
+    </div>
+</div>
+
+<!-- Section 1 -->
+<div class="section" id="s1">
+    <div class="section-header">
+        <span class="section-num">1</span>
+        <h2>需求背景与目标</h2>
+    </div>
+    <div class="card">
+        <h3>背景</h3>
+        <p>当前主流音乐平台（网易云音乐、QQ音乐等）功能繁杂、广告众多，且需要登录注册才能使用完整功能。对于只想安静听歌的个人用户而言，这些平台存在大量干扰。本产品定位为一款<strong>纯个人使用的本地音乐播放器</strong>，聚合多个音乐源的搜索结果，提供简洁、无广告、无需登录的听歌体验。</p>
+        <div class="info-block">
+            <strong>核心定位：</strong>去掉所有社交属性（用户头像、用户名、个人主页入口），只保留音乐搜索、播放、收藏、下载等核心功能，打造极致简洁的个人听歌工具。
+        </div>
+    </div>
+    <div class="card">
+        <h3>产品目标</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span><strong>聚合搜索</strong> - 支持从多个音乐源搜索歌曲，用户可自由切换音源</span></li>
+            <li><span class="icon"></span><span><strong>沉浸播放</strong> - 全屏歌词同步显示，支持多种播放模式</span></li>
+            <li><span class="icon"></span><span><strong>离线下载</strong> - 支持歌曲下载到本地，无网络也可播放</span></li>
+            <li><span class="icon"></span><span><strong>零门槛使用</strong> - 无需注册登录，打开即可使用</span></li>
+            <li><span class="icon"></span><span><strong>简洁无干扰</strong> - 无广告、无社交推送、无多余功能</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 2 -->
+<div class="section" id="s2">
+    <div class="section-header">
+        <span class="section-num">2</span>
+        <h2>用户画像与场景</h2>
+    </div>
+    <div class="card">
+        <h3>目标用户</h3>
+        <table>
+            <thead>
+                <tr><th>维度</th><th>描述</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>用户类型</td><td>个人音乐爱好者，追求简洁听歌体验</td></tr>
+                <tr><td>使用频率</td><td>每日使用，每次 30 分钟至数小时</td></tr>
+                <tr><td>核心诉求</td><td>快速找到想听的歌、沉浸式播放、离线可用</td></tr>
+                <tr><td>技术能力</td><td>普通智能手机用户，能熟练使用基础 App</td></tr>
+                <tr><td>痛点</td><td>主流平台广告多、功能杂、需登录、推荐算法干扰</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>核心使用场景</h3>
+        <table>
+            <thead>
+                <tr><th>场景</th><th>描述</th><th>优先级</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>发现新歌</td><td>打开 App 查看排行榜，浏览热门歌曲，发现感兴趣的音乐</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>搜索播放</td><td>通过搜索栏输入歌名、歌手名或专辑名，快速找到目标歌曲并播放</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>沉浸听歌</td><td>在全屏播放器中查看同步歌词，享受沉浸式听歌体验</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>收藏管理</td><td>将喜欢的歌曲加入收藏，方便日后快速找到</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>离线听歌</td><td>下载歌曲到本地，在无网络环境下（通勤、飞行模式）播放</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>睡前定时</td><td>设置定时暂停，在入睡前自动停止播放</td><td><span class="p2">P2</span></td></tr>
+                <tr><td>浏览评论</td><td>查看其他用户对歌曲的评论，感受社区氛围</td><td><span class="p2">P2</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Section 3 -->
+<div class="section" id="s3">
+    <div class="section-header">
+        <span class="section-num">3</span>
+        <h2>产品功能总览</h2>
+    </div>
+    <div class="card">
+        <h3>功能模块一览</h3>
+        <table>
+            <thead>
+                <tr><th>#</th><th>模块</th><th>功能描述</th><th>优先级</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>1</td><td>首页排行榜</td><td>展示热歌榜、飙升榜、新歌榜三个维度的歌曲排行，支持浏览和直接播放</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>2</td><td>搜索功能</td><td>支持按歌曲名、歌手名、专辑名搜索，含热门搜索推荐和搜索历史</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>3</td><td>搜索结果页</td><td>展示搜索到的歌曲列表，支持按音源筛选，显示歌曲信息和操作入口</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>4</td><td>歌曲操作菜单</td><td>底部弹出操作面板，提供从列表移除、下一首播放、收藏、分享、评论、下载、定时暂停等操作</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>5</td><td>迷你播放器</td><td>全局底部常驻播放控制条，显示当前播放歌曲信息，支持暂停/播放和展开全屏</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>6</td><td>全屏播放器</td><td>沉浸式播放界面，含模糊专辑背景、同步歌词滚动、进度条拖拽、播放控制、收藏/评论/定时等操作</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>7</td><td>播放队列</td><td>查看和管理当前播放队列，支持调整顺序和移除歌曲</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>8</td><td>播放模式</td><td>支持列表循环、单曲循环、随机播放三种模式切换</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>9</td><td>收藏功能</td><td>收藏/取消收藏歌曲，收藏列表独立管理</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>10</td><td>下载管理</td><td>下载歌曲到本地存储，支持查看下载列表和删除已下载歌曲</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>11</td><td>评论功能</td><td>查看歌曲评论列表，支持点赞和回复</td><td><span class="p2">P2</span></td></tr>
+                <tr><td>12</td><td>定时暂停</td><td>设置 15 分钟至 2 小时的定时暂停，到时自动停止播放</td><td><span class="p2">P2</span></td></tr>
+                <tr><td>13</td><td>分享功能</td><td>将歌曲通过系统分享面板分享给其他应用或联系人</td><td><span class="p2">P2</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h3>页面导航结构</h3>
+        <div class="mermaid-wrapper">
+            <div id="nav-flow"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 4 -->
+<div class="section" id="s4">
+    <div class="section-header">
+        <span class="section-num">4</span>
+        <h2>首页 - 排行榜</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/home-screen.jpg" alt="首页排行榜原型">
+            <div class="img-caption">图 4-1: 首页排行榜页面原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>页面结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部导航</td><td>搜索栏</td><td>圆角输入框，左侧音乐符号图标，占位文字"输入想要搜索的音乐"，点击跳转搜索页</td></tr>
+                <tr><td>排行榜区域</td><td>标题栏</td><td>左侧显示"Rankings"文字及菜单图标，右侧显示更多选项图标</td></tr>
+                <tr><td>排行榜区域</td><td>分类标签栏</td><td>三个标签页："热歌榜"（火焰图标，默认选中）、"飙升榜"（趋势箭头图标）、"新歌榜"（NEW 标记）</td></tr>
+                <tr><td>歌曲列表</td><td>歌曲卡片</td><td>每首歌显示：排名序号、专辑封面缩略图、歌曲名、歌手名、三点菜单按钮</td></tr>
+                <tr><td>歌曲列表</td><td>当前播放标识</td><td>正在播放的歌曲卡片左侧显示音频波形动画图标，背景色为浅薄荷绿</td></tr>
+                <tr><td>底部</td><td>迷你播放器</td><td>全局常驻，详见第 8 节</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>排行榜数据加载</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>进入首页时自动请求当前"热歌榜"数据并渲染列表</span></li>
+                <li><span class="icon"></span><span>切换标签时请求对应榜单数据，显示加载状态</span></li>
+                <li><span class="icon"></span><span>列表支持下拉刷新</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>歌曲卡片交互</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span><strong>点击歌曲卡片</strong> - 将该歌曲加入播放队列并开始播放，同时迷你播放器更新为当前歌曲</span></li>
+                <li><span class="icon"></span><span><strong>点击三点菜单</strong> - 弹出歌曲操作菜单（详见第 7 节）</span></li>
+                <li><span class="icon"></span><span>正在播放的歌曲卡片背景高亮，左侧显示波形动画图标</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>排行榜标签切换</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>点击不同标签切换榜单，选中标签以薄荷绿背景高亮显示</span></li>
+                <li><span class="icon"></span><span>切换时列表平滑过渡，保留滚动位置记忆（各标签独立记录）</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 5 -->
+<div class="section" id="s5">
+    <div class="section-header">
+        <span class="section-num">5</span>
+        <h2>搜索功能</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/search-screen.jpg" alt="搜索页面原型">
+            <div class="img-caption">图 5-1: 搜索页面原型（热门搜索标签页）</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>页面结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部导航</td><td>返回按钮</td><td>左侧薄荷绿返回箭头，返回上一页</td></tr>
+                <tr><td>顶部导航</td><td>搜索输入框</td><td>圆角输入框，左侧音符图标，占位文字"搜索歌曲、歌手、专辑..."</td></tr>
+                <tr><td>顶部导航</td><td>搜索按钮</td><td>右侧"搜索"文字按钮，薄荷绿色，点击执行搜索</td></tr>
+                <tr><td>标签栏</td><td>热门搜索</td><td>带上升箭头图标，选中时薄荷绿高亮背景</td></tr>
+                <tr><td>标签栏</td><td>历史记录</td><td>带时钟图标，未选中时灰色文字</td></tr>
+                <tr><td>热门搜索列表</td><td>排名条目</td><td>序号徽章（前三名彩色渐变：红、橙、蓝；其余灰色）+ 搜索词 + 热度标签（前三名显示）</td></tr>
+                <tr><td>底部</td><td>迷你播放器</td><td>全局常驻</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>热门搜索</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>展示 Top 10 热门搜索词，排名 1-3 带有热度标签："超级热"（红色火焰 x3）、"很热"（橙色火焰 x2）、"热门"（蓝色火焰 x1）</span></li>
+                <li><span class="icon"></span><span>排名徽章颜色编码：第 1 名红色渐变、第 2 名橙色渐变、第 3 名蓝色渐变、第 4-5 名紫色/青色、第 6-10 名灰色</span></li>
+                <li><span class="icon"></span><span>点击任意热门搜索词，自动填入搜索框并执行搜索</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>搜索历史</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>记录用户最近 20 条搜索关键词，按时间倒序排列</span></li>
+                <li><span class="icon"></span><span>每条历史记录右侧有删除按钮，支持单条删除</span></li>
+                <li><span class="icon"></span><span>顶部提供"清空历史"按钮，点击后二次确认后清空全部</span></li>
+                <li><span class="icon"></span><span>点击历史记录词，自动填入搜索框并执行搜索</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>搜索执行</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>输入关键词后点击"搜索"按钮或键盘搜索键执行搜索</span></li>
+                <li><span class="icon"></span><span>搜索结果页展示匹配的歌曲列表（详见第 6 节）</span></li>
+                <li><span class="icon"></span><span>搜索关键词自动保存到搜索历史</span></li>
+                <li><span class="icon"></span><span>空关键词时提示"请输入搜索内容"</span></li>
+                <li><span class="icon"></span><span>无结果时显示空状态页面，提示"未找到相关歌曲，换个关键词试试"</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 6 -->
+<div class="section" id="s6">
+    <div class="section-header">
+        <span class="section-num">6</span>
+        <h2>搜索结果 / 歌手页</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/artist-results.jpg" alt="搜索结果页原型">
+            <div class="img-caption">图 6-1: 搜索结果/歌手页原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>页面结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部导航</td><td>返回按钮</td><td>左侧薄荷绿返回箭头</td></tr>
+                <tr><td>顶部导航</td><td>页面标题</td><td>居中显示搜索关键词或歌手名</td></tr>
+                <tr><td>音源筛选栏</td><td>筛选标签</td><td>水平排列的药丸形按钮："全部"（默认选中，薄荷绿填充）、"网易"、"GQH"、"GQB"、"HGQ"等音源名称</td></tr>
+                <tr><td>歌曲列表</td><td>当前播放卡片</td><td>浅薄荷绿背景，左侧波形动画图标，歌曲名和歌手名均为薄荷绿色</td></tr>
+                <tr><td>歌曲列表</td><td>普通歌曲卡片</td><td>白色背景，显示歌曲名（黑色粗体）和歌手名（灰色），右侧三点菜单</td></tr>
+                <tr><td>底部</td><td>迷你播放器</td><td>全局常驻</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>音源筛选</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>页面顶部提供音源筛选标签，用户可切换查看不同音乐平台的结果</span></li>
+                <li><span class="icon"></span><span>"全部"标签聚合所有音源的搜索结果</span></li>
+                <li><span class="icon"></span><span>切换音源时重新请求对应数据源，列表刷新显示</span></li>
+                <li><span class="icon"></span><span>每个歌曲卡片显示其来源平台标签（如"网易"绿色药丸标记）</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>歌曲列表交互</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span><strong>点击歌曲</strong> - 开始播放该歌曲，当前播放歌曲高亮显示</span></li>
+                <li><span class="icon"></span><span><strong>点击三点菜单</strong> - 弹出歌曲操作菜单</span></li>
+                <li><span class="icon"></span><span>列表支持无限滚动加载更多结果</span></li>
+                <li><span class="icon"></span><span>加载中显示底部 loading 指示器</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 7 -->
+<div class="section" id="s7">
+    <div class="section-header">
+        <span class="section-num">7</span>
+        <h2>歌曲操作菜单</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/action-sheet.jpg" alt="歌曲操作菜单原型">
+            <div class="img-caption">图 7-1: 歌曲操作菜单（底部弹出面板）</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>面板结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部</td><td>拖拽手柄</td><td>水平短线条，提示用户可下滑关闭</td></tr>
+                <tr><td>歌曲信息</td><td>专辑封面</td><td>方形圆角图片，薄荷绿边框高亮</td></tr>
+                <tr><td>歌曲信息</td><td>歌曲名</td><td>大号粗体文字</td></tr>
+                <tr><td>歌曲信息</td><td>来源标签</td><td>薄荷绿药丸形标签，显示音源名称（如"网易"）</td></tr>
+                <tr><td>歌曲信息</td><td>歌手名</td><td>灰色次要文字</td></tr>
+                <tr><td>操作按钮</td><td>第一行</td><td>从列表移除、下一首播放、喜欢、分享</td></tr>
+                <tr><td>操作按钮</td><td>第二行</td><td>评论、下载、定时暂停</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>操作项详情</h3>
+        <table>
+            <thead>
+                <tr><th>操作</th><th>图标</th><th>触发行为</th><th>优先级</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>从列表移除</td><td>列表+X</td><td>从当前播放队列中移除该歌曲，显示 Toast 提示"已从列表移除"</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>下一首播放</td><td>箭头+音符</td><td>将该歌曲插入到当前播放歌曲之后，显示 Toast 提示"将在当前歌曲后播放"</td><td><span class="p0">P0</span></td></tr>
+                <tr><td>喜欢</td><td>心形</td><td>收藏/取消收藏该歌曲，图标在空心和实心之间切换，显示 Toast 反馈</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>分享</td><td>分享节点</td><td>调起系统分享面板，分享歌曲名和歌手信息</td><td><span class="p2">P2</span></td></tr>
+                <tr><td>评论</td><td>气泡</td><td>打开评论弹窗（详见第 11 节）</td><td><span class="p2">P2</span></td></tr>
+                <tr><td>下载</td><td>下载箭头</td><td>开始下载该歌曲到本地，已下载则显示"已下载"状态</td><td><span class="p1">P1</span></td></tr>
+                <tr><td>定时暂停</td><td>计时器</td><td>打开定时暂停设置面板（详见第 12 节）</td><td><span class="p2">P2</span></td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>交互规则</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>从底部滑入，背景半透明遮罩</span></li>
+            <li><span class="icon"></span><span>点击遮罩区域或下滑拖拽手柄可关闭面板</span></li>
+            <li><span class="icon"></span><span>操作按钮采用 4 列网格布局，每个按钮为图标+文字的垂直排列</span></li>
+            <li><span class="icon"></span><span>点击操作按钮后立即执行对应功能，面板自动关闭</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 8 -->
+<div class="section" id="s8">
+    <div class="section-header">
+        <span class="section-num">8</span>
+        <h2>迷你播放器</h2>
+    </div>
+    <div class="card">
+        <h3>结构说明</h3>
+        <p>迷你播放器是全局底部常驻组件，在除全屏播放器外的所有页面中始终显示。当有歌曲正在播放或暂停时展示，无播放内容时隐藏。</p>
+        <table>
+            <thead>
+                <tr><th>位置</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>最左侧</td><td>专辑封面</td><td>圆形缩略图，带装饰性边框</td></tr>
+                <tr><td>左侧</td><td>歌手名</td><td>当前播放歌曲的歌手名，文字过长时跑马灯滚动</td></tr>
+                <tr><td>中间</td><td>歌曲信息</td><td>歌曲名 - 歌手名（粗体显示）</td></tr>
+                <tr><td>右侧</td><td>播放/暂停按钮</td><td>圆形按钮，显示播放或暂停图标</td></tr>
+                <tr><td>最右侧</td><td>播放队列按钮</td><td>音符+列表图标，点击打开播放队列页面</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>交互规则</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span><strong>点击播放/暂停按钮</strong> - 切换当前歌曲的播放/暂停状态</span></li>
+            <li><span class="icon"></span><span><strong>点击播放队列按钮</strong> - 打开播放队列页面</span></li>
+            <li><span class="icon"></span><span><strong>点击歌曲信息区域</strong> - 展开进入全屏播放器</span></li>
+            <li><span class="icon"></span><span><strong>上滑手势</strong> - 从迷你播放器区域向上滑动，展开进入全屏播放器</span></li>
+            <li><span class="icon"></span><span>迷你播放器位于页面最底部，不影响页面内容滚动（内容区域底部留出播放器高度的安全距离）</span></li>
+            <li><span class="icon"></span><span>歌曲切换时，封面和信息平滑过渡更新</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 9 -->
+<div class="section" id="s9">
+    <div class="section-header">
+        <span class="section-num">9</span>
+        <h2>全屏播放器</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/player-screen.jpg" alt="全屏播放器原型">
+            <div class="img-caption">图 9-1: 全屏播放器页面原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>页面结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部导航</td><td>收起按钮</td><td>左侧下箭头，点击收起回迷你播放器</td></tr>
+                <tr><td>顶部导航</td><td>分享按钮</td><td>右侧分享图标，调起系统分享面板</td></tr>
+                <tr><td>中央区域</td><td>歌词显示</td><td>卡拉 OK 式同步滚动歌词，当前行薄荷绿高亮放大，其余行为白色半透明</td></tr>
+                <tr><td>进度区域</td><td>进度条</td><td>水平进度条，薄荷绿填充已播放部分，圆形拖拽手柄</td></tr>
+                <tr><td>进度区域</td><td>时间显示</td><td>左侧显示当前播放时间，右侧显示总时长</td></tr>
+                <tr><td>主控制栏</td><td>循环模式</td><td>列表循环/单曲循环/随机播放图标切换</td></tr>
+                <tr><td>主控制栏</td><td>上一首</td><td>白色圆形按钮，黑色上一首图标</td></tr>
+                <tr><td>主控制栏</td><td>播放/暂停</td><td>大号薄荷绿圆形按钮，白色播放/暂停图标</td></tr>
+                <tr><td>主控制栏</td><td>下一首</td><td>白色圆形按钮，黑色下一首图标</td></tr>
+                <tr><td>主控制栏</td><td>播放队列</td><td>列表+播放图标，点击打开播放队列</td></tr>
+                <tr><td>次操作栏</td><td>收藏</td><td>心形图标，空心/实心切换</td></tr>
+                <tr><td>次操作栏</td><td>评论</td><td>气泡图标，点击打开评论面板</td></tr>
+                <tr><td>次操作栏</td><td>定时</td><td>计时器图标，点击打开定时暂停面板</td></tr>
+                <tr><td>次操作栏</td><td>更多</td><td>三点图标，点击弹出更多操作菜单</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>背景效果</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>背景使用当前歌曲专辑封面的高斯模糊放大版，营造沉浸氛围</span></li>
+                <li><span class="icon"></span><span>叠加半透明深色遮罩确保歌词和控件的文字可读性</span></li>
+                <li><span class="icon"></span><span>背景可加入微弱的浮动光点粒子动画效果</span></li>
+                <li><span class="icon"></span><span>歌曲切换时背景平滑过渡（交叉淡入淡出）</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>歌词同步</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>歌词按时间轴逐行滚动，当前播放行居中显示</span></li>
+                <li><span class="icon"></span><span>当前行使用薄荷绿高亮，字号稍大，其余行为白色半透明</span></li>
+                <li><span class="icon"></span><span>用户可手动上下滑动浏览歌词，松手后自动回到当前播放行</span></li>
+                <li><span class="icon"></span><span>点击某行歌词可跳转到对应时间点播放</span></li>
+                <li><span class="icon"></span><span>无歌词时显示"暂无歌词"提示</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>进度条</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>显示当前播放时间（左侧）和总时长（右侧），格式 mm:ss</span></li>
+                <li><span class="icon"></span><span>点击进度条任意位置可跳转到对应时间点</span></li>
+                <li><span class="icon"></span><span>长按拖拽圆形手柄可精确调节播放位置</span></li>
+                <li><span class="icon"></span><span>拖拽时在进度条上方显示时间气泡</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>播放控制</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span><strong>播放/暂停</strong> - 切换播放状态，图标同步更新</span></li>
+                <li><span class="icon"></span><span><strong>上一首</strong> - 播放队列中的上一首歌曲；当前歌曲播放 3 秒内点击则重头播放当前歌曲</span></li>
+                <li><span class="icon"></span><span><strong>下一首</strong> - 播放队列中的下一首歌曲</span></li>
+                <li><span class="icon"></span><span><strong>循环模式</strong> - 三种模式循环切换：列表循环 → 单曲循环 → 随机播放，图标和文字提示随之变化</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>手势操作</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span><strong>下滑手势</strong> - 从屏幕顶部向下滑动，收起回迷你播放器</span></li>
+                <li><span class="icon"></span><span><strong>左右滑动</strong> - 在歌词区域左右滑动可切换上一首/下一首</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>Toast 通知</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>收藏/取消收藏操作后，在页面顶部显示薄荷绿圆角 Toast 通知（如"收藏成功"/"取消收藏成功"），2 秒后自动消失</span></li>
+                <li><span class="icon"></span><span>Toast 不遮挡歌词区域的主要阅读位置</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 10 -->
+<div class="section" id="s10">
+    <div class="section-header">
+        <span class="section-num">10</span>
+        <h2>播放队列</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/playlist-queue.jpg" alt="播放队列原型">
+            <div class="img-caption">图 10-1: 播放队列页面原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>页面结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部导航</td><td>返回按钮</td><td>左侧返回箭头</td></tr>
+                <tr><td>顶部导航</td><td>页面标题</td><td>居中显示"播放队列"</td></tr>
+                <tr><td>队列列表</td><td>当前播放歌曲</td><td>浅薄荷绿背景高亮，左侧波形动画图标</td></tr>
+                <tr><td>队列列表</td><td>待播放歌曲</td><td>显示序号、专辑封面、歌曲名、歌手名、三点菜单</td></tr>
+                <tr><td>底部</td><td>迷你播放器</td><td>全局常驻</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span><strong>查看队列</strong> - 按播放顺序展示所有待播放歌曲，当前播放歌曲位于顶部并高亮</span></li>
+            <li><span class="icon"></span><span><strong>点击歌曲</strong> - 跳转播放该歌曲</span></li>
+            <li><span class="icon"></span><span><strong>长按拖拽</strong> - 支持长按歌曲条目后拖拽调整播放顺序</span></li>
+            <li><span class="icon"></span><span><strong>三点菜单</strong> - 弹出操作菜单，支持"从列表移除"和"下一首播放"</span></li>
+            <li><span class="icon"></span><span><strong>左滑删除</strong> - 在歌曲条目上左滑显示删除按钮，点击移除该歌曲</span></li>
+            <li><span class="icon"></span><span>队列为空时显示空状态："播放队列为空，去搜索喜欢的歌曲吧"</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 11 -->
+<div class="section" id="s11">
+    <div class="section-header">
+        <span class="section-num">11</span>
+        <h2>评论功能</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/comments-modal.jpg" alt="评论面板原型">
+            <div class="img-caption">图 11-1: 评论面板原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>面板结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部</td><td>标题栏</td><td>居中"评论"标题，右侧刷新图标和关闭按钮</td></tr>
+                <tr><td>评论列表</td><td>评论卡片</td><td>头像（圆形）、用户名、评论内容、发布时间+地区、"回复"按钮、点赞/踩按钮</td></tr>
+                <tr><td>底部</td><td>结束标识</td><td>"没有更多了"分隔线提示</td></tr>
+                <tr><td>底部</td><td>护眼提示</td><td>圆角药丸形提示"过度用眼，请注意用眼时间"</td></tr>
+                <tr><td>底部</td><td>评论输入框</td><td>占位文字"善语结善缘，恶语伤人心"，右侧绿色圆形发送按钮</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span><strong>评论列表</strong> - 按时间倒序展示该歌曲的评论，支持分页加载</span></li>
+            <li><span class="icon"></span><span><strong>点赞</strong> - 点击心形图标对评论点赞，再次点击取消</span></li>
+            <li><span class="icon"></span><span><strong>踩</strong> - 点击踩图标对评论点踩，与点赞互斥</span></li>
+            <li><span class="icon"></span><span><strong>回复</strong> - 点击"回复"按钮，输入框聚焦并 @ 该用户</span></li>
+            <li><span class="icon"></span><span><strong>发送评论</strong> - 在输入框中输入内容后点击发送按钮提交评论</span></li>
+            <li><span class="icon"></span><span><strong>刷新</strong> - 点击刷新图标重新加载评论列表</span></li>
+            <li><span class="icon"></span><span>评论数据来自对应音源平台的公开评论接口</span></li>
+            <li><span class="icon"></span><span>无评论时显示空状态："暂无评论，来说点什么吧"</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 12 -->
+<div class="section" id="s12">
+    <div class="section-header">
+        <span class="section-num">12</span>
+        <h2>定时暂停</h2>
+    </div>
+    <div class="card">
+        <h3>页面原型</h3>
+        <div class="img-wrapper">
+            <img src="prd-assets/timer-modal.jpg" alt="定时暂停面板原型">
+            <div class="img-caption">图 12-1: 定时暂停设置面板原型</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>面板结构</h3>
+        <table>
+            <thead>
+                <tr><th>区域</th><th>元素</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>顶部</td><td>标题</td><td>居中"定时暂停播放"粗体标题</td></tr>
+                <tr><td>顶部</td><td>关闭按钮</td><td>右上角薄荷绿圆形 X 按钮</td></tr>
+                <tr><td>选项列表</td><td>时间选项</td><td>15 分钟、30 分钟、45 分钟、60 分钟、90 分钟、2 小时，每项前有秒表图标</td></tr>
+                <tr><td>选项列表</td><td>取消定时</td><td>带斜杠秒表图标，点击取消当前激活的定时器</td></tr>
+                <tr><td>底部</td><td>关闭按钮</td><td>全宽薄荷绿圆角按钮，白色"关闭"文字</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span><strong>选择时间</strong> - 点击任意时间选项，立即启动对应时长的定时暂停</span></li>
+            <li><span class="icon"></span><span><strong>取消定时</strong> - 点击"取消定时"选项，关闭当前激活的定时器</span></li>
+            <li><span class="icon"></span><span><strong>定时触发</strong> - 倒计时结束后自动暂停播放，显示 Toast 提示"定时暂停已生效"</span></li>
+            <li><span class="icon"></span><span>定时器在 App 退到后台时继续计时</span></li>
+            <li><span class="icon"></span><span>定时器激活期间，迷你播放器或全屏播放器的定时图标显示剩余时间角标</span></li>
+            <li><span class="icon"></span><span>点击"关闭"按钮或 X 按钮关闭面板（不影响已设置的定时器）</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 13 -->
+<div class="section" id="s13">
+    <div class="section-header">
+        <span class="section-num">13</span>
+        <h2>收藏功能</h2>
+    </div>
+    <div class="card">
+        <h3>功能说明</h3>
+        <p>用户可以将喜欢的歌曲加入收藏列表，方便快速找到和播放。收藏数据存储在本地，无需登录同步。</p>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>收藏操作</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>在歌曲操作菜单中点击"喜欢"按钮收藏歌曲，图标变为实心心形</span></li>
+                <li><span class="icon"></span><span>在全屏播放器底部操作栏点击心形图标收藏歌曲</span></li>
+                <li><span class="icon"></span><span>再次点击已收藏的歌曲取消收藏，图标恢复空心</span></li>
+                <li><span class="icon"></span><span>操作后显示 Toast 反馈："收藏成功"或"取消收藏成功"</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>收藏列表</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>在首页提供"我的收藏"入口（可放在搜索栏下方或作为独立标签页）</span></li>
+                <li><span class="icon"></span><span>收藏列表按收藏时间倒序排列，显示歌曲封面、名称、歌手和音源标签</span></li>
+                <li><span class="icon"></span><span>支持点击播放、长按拖拽排序、左滑删除</span></li>
+                <li><span class="icon"></span><span>支持批量管理模式：长按进入多选，可批量取消收藏</span></li>
+                <li><span class="icon"></span><span>收藏列表为空时显示空状态："还没有收藏歌曲，去发现喜欢的音乐吧"</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 14 -->
+<div class="section" id="s14">
+    <div class="section-header">
+        <span class="section-num">14</span>
+        <h2>下载管理</h2>
+    </div>
+    <div class="card">
+        <h3>功能说明</h3>
+        <p>支持将在线歌曲下载到本地存储，在无网络环境下也能播放已下载的歌曲。</p>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <div class="subsection">
+            <h4>下载操作</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>在歌曲操作菜单中点击"下载"按钮开始下载</span></li>
+                <li><span class="icon"></span><span>下载过程中歌曲卡片显示下载进度条</span></li>
+                <li><span class="icon"></span><span>下载完成后显示 Toast 提示"下载完成"</span></li>
+                <li><span class="icon"></span><span>已下载的歌曲在操作菜单中"下载"按钮显示为"已下载"状态</span></li>
+                <li><span class="icon"></span><span>下载失败时提示"下载失败，请重试"</span></li>
+            </ul>
+        </div>
+        <div class="subsection">
+            <h4>下载列表</h4>
+            <ul class="feature-list">
+                <li><span class="icon"></span><span>在首页提供"本地下载"入口</span></li>
+                <li><span class="icon"></span><span>下载列表显示所有已下载歌曲，包含文件大小信息</span></li>
+                <li><span class="icon"></span><span>支持左滑删除已下载的歌曲（仅删除本地文件，不影响收藏状态）</span></li>
+                <li><span class="icon"></span><span>显示已下载歌曲的总占用存储空间</span></li>
+                <li><span class="icon"></span><span>无网络时，已下载歌曲可正常播放，未下载歌曲显示"需要网络连接"提示</span></li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<!-- Section 15 -->
+<div class="section" id="s15">
+    <div class="section-header">
+        <span class="section-num">15</span>
+        <h2>播放模式</h2>
+    </div>
+    <div class="card">
+        <h3>模式说明</h3>
+        <table>
+            <thead>
+                <tr><th>模式</th><th>图标</th><th>行为描述</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>列表循环</td><td>循环箭头</td><td>按播放队列顺序依次播放，队列最后一首播完后回到第一首继续循环</td></tr>
+                <tr><td>单曲循环</td><td>循环箭头+数字1</td><td>重复播放当前歌曲，不自动切换到下一首</td></tr>
+                <tr><td>随机播放</td><td>交叉箭头</td><td>从播放队列中随机选择下一首歌曲播放</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>交互规则</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>在全屏播放器主控制栏点击循环模式图标，按"列表循环 → 单曲循环 → 随机播放"顺序循环切换</span></li>
+            <li><span class="icon"></span><span>切换时显示 Toast 提示当前模式名称</span></li>
+            <li><span class="icon"></span><span>图标随模式变化更新，选中状态以薄荷绿高亮</span></li>
+            <li><span class="icon"></span><span>播放模式选择在 App 重启后保持上次设置</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 16 -->
+<div class="section" id="s16">
+    <div class="section-header">
+        <span class="section-num">16</span>
+        <h2>分享功能</h2>
+    </div>
+    <div class="card">
+        <h3>功能说明</h3>
+        <p>将歌曲信息通过系统原生分享面板分享到其他应用。</p>
+    </div>
+    <div class="card">
+        <h3>功能详情</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>在歌曲操作菜单中点击"分享"或在全屏播放器点击分享图标</span></li>
+            <li><span class="icon"></span><span>调起系统原生分享面板（Android ShareSheet / iOS UIActivityViewController）</span></li>
+            <li><span class="icon"></span><span>分享内容为文本格式："歌曲名 - 歌手名"，可附加歌曲链接（如有）</span></li>
+            <li><span class="icon"></span><span>用户自行选择分享目标应用（微信、QQ、短信等）</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 17 -->
+<div class="section" id="s17">
+    <div class="section-header">
+        <span class="section-num">17</span>
+        <h2>数据模型</h2>
+    </div>
+    <div class="card">
+        <h3>核心数据实体</h3>
+        <table>
+            <thead>
+                <tr><th>实体</th><th>字段</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td rowspan="8"><strong>Song（歌曲）</strong></td>
+                    <td>id</td><td>歌曲唯一标识</td>
+                </tr>
+                <tr><td>title</td><td>歌曲名称</td></tr>
+                <tr><td>artist</td><td>歌手名称</td></tr>
+                <tr><td>album</td><td>专辑名称</td></tr>
+                <tr><td>cover_url</td><td>专辑封面 URL</td></tr>
+                <tr><td>audio_url</td><td>音频文件 URL</td></tr>
+                <tr><td>source</td><td>音源标识（如 netease、gqh 等）</td></tr>
+                <tr><td>duration</td><td>歌曲时长（秒）</td></tr>
+                <tr>
+                    <td rowspan="4"><strong>Lyric（歌词）</strong></td>
+                    <td>song_id</td><td>关联歌曲 ID</td></tr>
+                <tr><td>content</td><td>歌词文本内容（LRC 格式）</td></tr>
+                <tr><td>offset</td><td>时间偏移量（毫秒）</td></tr>
+                <tr><td>source</td><td>歌词来源</td></tr>
+                <tr>
+                    <td rowspan="4"><strong>Favorite（收藏）</strong></td>
+                    <td>song_id</td><td>关联歌曲 ID</td></tr>
+                <tr><td>created_at</td><td>收藏时间</td></tr>
+                <tr><td>song_snapshot</td><td>歌曲信息快照（JSON，防止源数据变更）</td></tr>
+                <tr><td>source</td><td>音源标识</td></tr>
+                <tr>
+                    <td rowspan="4"><strong>Download（下载）</strong></td>
+                    <td>song_id</td><td>关联歌曲 ID</td></tr>
+                <tr><td>local_path</td><td>本地存储路径</td></tr>
+                <tr><td>file_size</td><td>文件大小（字节）</td></tr>
+                <tr><td>downloaded_at</td><td>下载完成时间</td></tr>
+                <tr>
+                    <td rowspan="3"><strong>SearchHistory（搜索历史）</strong></td>
+                    <td>keyword</td><td>搜索关键词</td></tr>
+                <tr><td>searched_at</td><td>搜索时间</td></tr>
+                <tr><td>result_count</td><td>搜索结果数量</td></tr>
+                <tr>
+                    <td rowspan="4"><strong>PlayQueue（播放队列）</strong></td>
+                    <td>songs</td><td>有序歌曲 ID 列表</td></tr>
+                <tr><td>current_index</td><td>当前播放索引</td></tr>
+                <tr><td>play_mode</td><td>播放模式（loop/single/shuffle）</td></tr>
+                <tr><td>current_position</td><td>当前播放进度（毫秒）</td></tr>
+                <tr>
+                    <td rowspan="3"><strong>Timer（定时器）</strong></td>
+                    <td>target_time</td><td>目标暂停时间戳</td></tr>
+                <tr><td>duration_minutes</td><td>设定时长（分钟）</td></tr>
+                <tr><td>is_active</td><td>是否激活</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Section 18 -->
+<div class="section" id="s18">
+    <div class="section-header">
+        <span class="section-num">18</span>
+        <h2>技术架构</h2>
+    </div>
+    <div class="card">
+        <h3>架构概览</h3>
+        <div class="mermaid-wrapper">
+            <div id="arch-flow"></div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>技术选型建议</h3>
+        <table>
+            <thead>
+                <tr><th>层</th><th>推荐方案</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>跨平台框架</td><td>Flutter / React Native</td><td>一套代码同时支持 Android 和 iOS</td></tr>
+                <tr><td>音频播放</td><td>just_audio / ExoPlayer</td><td>支持流媒体和本地文件播放，支持后台播放</td></tr>
+                <tr><td>本地存储</td><td>SQLite / Hive</td><td>存储收藏、下载记录、搜索历史、播放队列</td></tr>
+                <tr><td>网络请求</td><td>Dio / Retrofit</td><td>搜索 API 请求、歌曲信息获取、评论获取</td></tr>
+                <tr><td>状态管理</td><td>Provider / Riverpod / Bloc</td><td>管理播放状态、UI 状态、数据流</td></tr>
+                <tr><td>歌词解析</td><td>自定义 LRC 解析器</td><td>解析标准 LRC 格式歌词文件，实现时间轴同步</td></tr>
+                <tr><td>后台播放</td><td>audio_service / WorkManager</td><td>支持锁屏播放控制、通知栏控制</td></tr>
+                <tr><td>下载管理</td><td>flutter_downloader / DownloadManager</td><td>支持断点续传、进度回调</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>音乐源 API 说明</h3>
+        <div class="info-block warning">
+            <strong>注意：</strong>本产品需要对接第三方音乐搜索 API。具体 API 接口和协议不在本文档范围内，开发时需根据实际可用的音乐源进行对接。建议使用开源的音乐搜索聚合 API 项目。
+        </div>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>搜索接口：输入关键词，返回匹配的歌曲列表（含歌曲名、歌手、封面 URL、音频 URL）</span></li>
+            <li><span class="icon"></span><span>歌词接口：根据歌曲 ID 获取 LRC 格式歌词</span></li>
+            <li><span class="icon"></span><span>排行榜接口：获取热歌榜、飙升榜、新歌榜数据</span></li>
+            <li><span class="icon"></span><span>评论接口：根据歌曲 ID 获取评论列表</span></li>
+            <li><span class="icon"></span><span>热门搜索接口：获取当前热门搜索关键词列表</span></li>
+            <li><span class="icon"></span><span>音频流：支持在线流式播放，支持 Range 请求实现进度跳转</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Section 19 -->
+<div class="section" id="s19">
+    <div class="section-header">
+        <span class="section-num">19</span>
+        <h2>非功能需求</h2>
+    </div>
+    <div class="card">
+        <h3>性能要求</h3>
+        <table>
+            <thead>
+                <tr><th>指标</th><th>要求</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>App 冷启动时间</td><td>不超过 2 秒</td></tr>
+                <tr><td>搜索响应时间</td><td>不超过 3 秒（含网络请求）</td></tr>
+                <tr><td>歌曲播放缓冲</td><td>点击后 1 秒内开始播放</td></tr>
+                <tr><td>页面切换</td><td>动画流畅，帧率不低于 60fps</td></tr>
+                <tr><td>歌词同步精度</td><td>误差不超过 100ms</td></tr>
+                <tr><td>内存占用</td><td>正常运行不超过 150MB</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>兼容性要求</h3>
+        <table>
+            <thead>
+                <tr><th>平台</th><th>最低版本</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>Android</td><td>Android 7.0 (API 24) 及以上</td></tr>
+                <tr><td>iOS</td><td>iOS 13.0 及以上</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>离线与存储</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>已下载歌曲支持完全离线播放，包括歌词显示</span></li>
+            <li><span class="icon"></span><span>收藏列表、搜索历史、播放队列、播放模式等设置在离线时保留</span></li>
+            <li><span class="icon"></span><span>下载文件存储在 App 私有目录，卸载 App 时自动清理</span></li>
+            <li><span class="icon"></span><span>支持用户手动清理下载缓存</span></li>
+        </ul>
+    </div>
+    <div class="card">
+        <h3>后台播放</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>App 退到后台后继续播放音乐</span></li>
+            <li><span class="icon"></span><span>系统通知栏显示播放控制（播放/暂停、上一首、下一首）</span></li>
+            <li><span class="icon"></span><span>锁屏界面显示播放控制和歌曲信息</span></li>
+            <li><span class="icon"></span><span>支持蓝牙耳机/车载系统的媒体控制按钮</span></li>
+            <li><span class="icon"></span><span>电话来电时自动暂停播放，通话结束后恢复</span></li>
+        </ul>
+    </div>
+    <div class="card">
+        <h3>异常处理</h3>
+        <table>
+            <thead>
+                <tr><th>场景</th><th>处理方式</th></tr>
+            </thead>
+            <tbody>
+                <tr><td>网络不可用</td><td>提示"网络连接不可用"，已下载歌曲仍可播放</td></tr>
+                <tr><td>播放失败</td><td>尝试重试 1 次，仍失败则提示"播放失败，请稍后重试"，自动跳到下一首</td></tr>
+                <tr><td>搜索无结果</td><td>显示空状态页面，提供搜索建议</td></tr>
+                <tr><td>下载失败</td><td>提示"下载失败"，支持手动重试</td></tr>
+                <tr><td>存储空间不足</td><td>提示"存储空间不足，请清理后重试"</td></tr>
+                <tr><td>歌词解析失败</td><td>显示"暂无歌词"提示，不影响播放</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Section 20 -->
+<div class="section" id="s20">
+    <div class="section-header">
+        <span class="section-num">20</span>
+        <h2>迭代计划</h2>
+    </div>
+    <div class="card">
+        <h3>分阶段开发路线</h3>
+        <table>
+            <thead>
+                <tr><th>阶段</th><th>目标</th><th>核心功能</th><th>预计周期</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><span class="tag tag-green">MVP</span></td>
+                    <td>核心听歌体验可用</td>
+                    <td>搜索歌曲、搜索结果列表、歌曲播放、迷你播放器、全屏播放器（含歌词同步）、播放队列、播放模式切换、音源筛选</td>
+                    <td>3-4 周</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-blue">V1.1</span></td>
+                    <td>个人数据管理</td>
+                    <td>收藏功能、下载管理、搜索历史、排行榜页面完善、歌曲操作菜单</td>
+                    <td>2 周</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-orange">V1.2</span></td>
+                    <td>体验增强</td>
+                    <td>评论功能、定时暂停、分享功能、后台播放优化、锁屏控制、蓝牙控制</td>
+                    <td>2 周</td>
+                </tr>
+                <tr>
+                    <td><span class="tag tag-gray">V2.0</span></td>
+                    <td>体验打磨</td>
+                    <td>播放动画优化、歌词翻译、音质选择、播放速度调节、UI 细节打磨</td>
+                    <td>按需迭代</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="card">
+        <h3>MVP 验收标准</h3>
+        <ul class="feature-list">
+            <li><span class="icon"></span><span>用户可输入关键词搜索歌曲，结果在 3 秒内返回</span></li>
+            <li><span class="icon"></span><span>点击搜索结果中的歌曲可立即播放，缓冲不超过 1 秒</span></li>
+            <li><span class="icon"></span><span>全屏播放器正确显示同步歌词，当前行高亮</span></li>
+            <li><span class="icon"></span><span>迷你播放器在所有页面正确显示和控制</span></li>
+            <li><span class="icon"></span><span>播放队列支持查看和切歌</span></li>
+            <li><span class="icon"></span><span>三种播放模式正确工作</span></li>
+            <li><span class="icon"></span><span>音源筛选可正常切换</span></li>
+            <li><span class="icon"></span><span>App 退到后台音乐继续播放</span></li>
+        </ul>
+    </div>
+</div>
+
+<!-- Footer -->
+<div class="footer">
+    <p>个人音乐播放器 - 需求设计文档 v1.0</p>
+    <p>创建日期：2026-06-22</p>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+    mermaid.initialize({
+        startOnLoad: true,
+        theme: 'base',
+        themeVariables: {
+            primaryColor: '#E8F5F0',
+            primaryTextColor: '#1A1A2E',
+            primaryBorderColor: '#5DBE9D',
+            lineColor: '#5DBE9D',
+            secondaryColor: '#F3F4F6',
+            tertiaryColor: '#FFFFFF',
+            fontFamily: 'Noto Sans SC, sans-serif',
+            fontSize: '14px'
+        }
+    });
+
+    // Navigation flow
+    document.getElementById('nav-flow').innerHTML = `
+        <pre class="mermaid">
+graph LR
+    A["首页<br/>排行榜"] -->|"点击搜索栏"| B["搜索页<br/>热门搜索/历史"]
+    A -->|"点击歌曲"| C["开始播放"]
+    A -->|"点击三点菜单"| D["歌曲操作菜单"]
+    B -->|"输入关键词"| E["搜索结果页<br/>音源筛选"]
+    B -->|"点击热门词"| E
+    E -->|"点击歌曲"| C
+    E -->|"点击三点菜单"| D
+    C -->|"迷你播放器<br/>点击/上滑"| F["全屏播放器<br/>歌词同步"]
+    F -->|"下滑/点击收起"| C
+    F -->|"点击队列图标"| G["播放队列"]
+    D -->|"喜欢"| H["收藏列表"]
+    D -->|"下载"| I["下载管理"]
+    D -->|"评论"| J["评论面板"]
+    D -->|"定时暂停"| K["定时设置"]
+    C -->|"点击队列图标"| G
+    G -->|"点击歌曲"| C
+        </pre>
+    `;
+
+    // Architecture flow
+    document.getElementById('arch-flow').innerHTML = `
+        <pre class="mermaid">
+graph TB
+    subgraph "表现层 (Presentation)"
+        UI["Flutter / React Native<br/>UI 组件"]
+        NAV["路由管理<br/>页面导航"]
+    end
+
+    subgraph "业务层 (Business)"
+        SM["状态管理<br/>播放状态/UI状态"]
+        PM["播放管理器<br/>播放控制/队列管理"]
+        LM["歌词管理器<br/>LRC解析/同步"]
+        DM["下载管理器<br/>任务调度/断点续传"]
+    end
+
+    subgraph "数据层 (Data)"
+        API["网络请求<br/>搜索/排行/评论"]
+        DB["本地数据库<br/>SQLite/Hive"]
+        FS["文件存储<br/>下载音频/封面"]
+    end
+
+    subgraph "服务层 (Service)"
+        AP["音频服务<br/>后台播放/通知栏"]
+        MS["媒体会话<br/>锁屏/蓝牙控制"]
+    end
+
+    UI --> NAV
+    UI --> SM
+    SM --> PM
+    SM --> LM
+    PM --> DM
+    PM --> AP
+    LM --> DB
+    DM --> FS
+    DM --> API
+    API --> DB
+    AP --> MS
+        </pre>
+    `;
+
+    // Re-render mermaid after dynamic content
+    setTimeout(() => {
+        mermaid.run();
+    }, 500);
+</script>
+
+</body>
+</html>
