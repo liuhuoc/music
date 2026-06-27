@@ -95,15 +95,7 @@ export default function App() {
     if (!isNative) return;
 
     const handleBackButton = (_event: { canGoBack: boolean }) => {
-      // Priority 1: Close overlays
-      if (showFullPlayer) {
-        setShowFullPlayer(false);
-        return;
-      }
-      if (showActionSheet) {
-        setShowActionSheet(false);
-        return;
-      }
+      // Priority 1: Close overlays (innermost first)
       if (showComments) {
         setShowComments(false);
         return;
@@ -112,12 +104,20 @@ export default function App() {
         setShowTimer(false);
         return;
       }
+      if (showActionSheet) {
+        setShowActionSheet(false);
+        return;
+      }
       if (showQueue) {
         setShowQueue(false);
         if (queueFromFullPlayer) {
           setQueueFromFullPlayer(false);
           setShowFullPlayer(true);
         }
+        return;
+      }
+      if (showFullPlayer) {
+        setShowFullPlayer(false);
         return;
       }
       // Priority 2: Navigate back
@@ -266,7 +266,7 @@ export default function App() {
         height: '100%',
         display: 'flex',
         justifyContent: 'center',
-        alignItems: 'center',
+        alignItems: 'flex-start',
         padding: '0',
         position: 'relative',
       }}>

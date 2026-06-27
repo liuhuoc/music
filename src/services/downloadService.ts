@@ -83,7 +83,7 @@ export async function downloadSong(
   // 获取播放 URL
   let url: string | null = null;
   try {
-    url = await getPlayUrlWithRetry(Number(song.id), 2);
+    url = await getPlayUrlWithRetry(song, 2);
   } catch {
     url = null;
   }

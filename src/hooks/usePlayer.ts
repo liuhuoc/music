@@ -167,7 +167,7 @@ export function usePlayer() {
       // Try to get real play URL from Netease API
       let playUrl: string | null = null;
       try {
-        playUrl = await getPlayUrlWithRetry(Number(song.id), 2);
+        playUrl = await getPlayUrlWithRetry(song, 2);
       } catch {
         playUrl = null;
       }
@@ -208,7 +208,7 @@ export function usePlayer() {
         if (downloadedItem?.filePath) {
           let fallbackUrl = url;
           try {
-            const playUrl = await getPlayUrlWithRetry(Number(song.id), 1);
+            const playUrl = await getPlayUrlWithRetry(song, 1);
             fallbackUrl = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
           } catch {
             fallbackUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
@@ -245,7 +245,7 @@ export function usePlayer() {
         audio.play().catch(() => {
           // Fallback: try network URL if local file failed
           if (downloadedItem?.filePath) {
-            getPlayUrlWithRetry(Number(song.id), 1)
+            getPlayUrlWithRetry(song, 1)
               .then(playUrl => {
                 const fallbackUrl = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
                 audio.src = fallbackUrl;
@@ -265,7 +265,7 @@ export function usePlayer() {
     // Fetch lyrics if not loaded yet
     if (song.lyrics === '[00:00.00]歌词加载中...') {
       try {
-        const lyric = await getLyric(Number(song.id));
+        const lyric = await getLyric(song);
         setCurrentSong(prev => prev && prev.id === song.id ? { ...prev, lyrics: lyric } : prev);
       } catch {
         // Keep default lyrics

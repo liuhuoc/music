@@ -1,283 +1,209 @@
-// 网易云音乐 API 服务层
-// 使用网易云音乐官方公开 API
+// 多平台统一音乐服务层
+// 作为所有平台适配器的统一入口，提供搜索、播放、歌词等聚合能力
 import { debugLogger } from '../utils/debugLogger';
+import type { Song } from '../data/songs';
+import type { PlatformAdapter, Platform } from './platforms/types';
+import { neteaseAdapter } from './platforms/netease';
+import { kuwoAdapter } from './platforms/kuwo';
+import { kugouAdapter } from './platforms/kugou';
+import { qqAdapter } from './platforms/qqmusic';
 
-const API_BASE = 'https://music.163.com/api';
+// 默认歌词（获取失败时使用）
+const DEFAULT_LYRIC = '[00:00.00]暂无歌词\n[00:05.00]\n[00:10.00]享受音乐吧~';
 
-export interface NeteaseSong {
-  id: number;
-  name: string;
-  artists: { name: string }[];
-  album: { name: string; picUrl: string };
-  duration: number;
+// 平台注册表：source -> 适配器
+const adapters: Record<string, PlatformAdapter> = {
+  netease: neteaseAdapter,
+  kuwo: kuwoAdapter,
+  kugou: kugouAdapter,
+  qq: qqAdapter,
+};
+
+// 平台列表（用于 UI 展示与过滤）
+export const PLATFORMS: ReadonlyArray<{ id: Platform; name: string; canPlay: boolean }> = [
+  { id: 'netease', name: '网易云音乐', canPlay: true },
+  { id: 'kuwo', name: '酷我音乐', canPlay: true },
+  { id: 'kugou', name: '酷狗音乐', canPlay: true },
+  { id: 'qq', name: 'QQ音乐', canPlay: false },
+];
+
+// 根据 source 获取适配器
+export function getAdapter(source: string): PlatformAdapter | undefined {
+  const adapter = adapters[source];
+  if (!adapter) {
+    debugLogger.warn(`[musicApi] 未找到平台适配器: source="${source}"`);
+  }
+  return adapter;
 }
 
-export interface SearchResult {
-  songs: NeteaseSong[];
-  songCount: number;
-}
-
-export interface SongUrl {
-  id: number;
-  url: string;
-  type: string;
-  size: number;
-  time: number;
-}
-
-export interface ToplistItem {
-  id: number;
-  name: string;
-  coverImgUrl: string;
-  description: string;
-}
-
-// 将 http URL 转为 https
-function toHttps(url: string): string {
-  return url ? url.replace(/^http:\/\//i, 'https://') : '';
-}
-
-// 通用 GET 请求封装
-async function apiGet<T>(endpoint: string): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-  debugLogger.log(`[API] GET 请求: ${url}`);
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-
+// 单平台搜索
+export async function searchByPlatform(
+  platform: string,
+  keyword: string,
+  limit: number = 30,
+  offset: number = 0,
+): Promise<Song[]> {
+  const adapter = getAdapter(platform);
+  if (!adapter) {
+    debugLogger.warn(`[musicApi] 单平台搜索失败，未知平台: ${platform}`);
+    return [];
+  }
+  debugLogger.log(`[musicApi] 单平台搜索: platform=${platform}, keyword="${keyword}", limit=${limit}, offset=${offset}`);
   try {
-    const response = await fetch(url, {
-      method: 'GET',
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    debugLogger.log(`[API] 响应状态: ${response.status} ${response.ok}`);
-
-    if (!response.ok) {
-      throw new Error(`API请求失败: ${response.status}`);
-    }
-
-    const data = await response.json();
-    debugLogger.log(`[API] 响应数据 code: ${data.code}`);
-
-    if (data.code !== 200) {
-      throw new Error(`API错误: code=${data.code}`);
-    }
-
-    return data;
+    const songs = await adapter.search(keyword, limit, offset);
+    debugLogger.log(`[musicApi] 平台 ${platform} 返回 ${songs.length} 首歌曲`);
+    return songs;
   } catch (error) {
-    clearTimeout(timeoutId);
-    debugLogger.error(`[API] 请求失败: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
+    debugLogger.error(`[musicApi] 平台 ${platform} 搜索异常: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
   }
 }
 
-// 通用 POST 请求封装
-async function apiPost<T>(endpoint: string, body: Record<string, string>): Promise<T> {
-  const url = `${API_BASE}${endpoint}`;
-  debugLogger.log(`[API] POST 请求: ${url}`);
+// 多平台聚合搜索，使用 Promise.allSettled 并行搜索所有平台，合并结果
+export async function searchAll(keyword: string, limit: number = 20): Promise<Song[]> {
+  debugLogger.log(`[musicApi] 聚合搜索: keyword="${keyword}", limit=${limit}`);
+  const entries = Object.values(adapters);
+  const results = await Promise.allSettled(
+    entries.map((adapter) => adapter.search(keyword, limit)),
+  );
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
-
-  try {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(body).toString(),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-    debugLogger.log(`[API] 响应状态: ${response.status} ${response.ok}`);
-
-    if (!response.ok) {
-      throw new Error(`API请求失败: ${response.status}`);
+  const merged: Song[] = [];
+  results.forEach((result, index) => {
+    const adapter = entries[index];
+    if (result.status === 'fulfilled') {
+      debugLogger.log(`[musicApi] 平台 ${adapter.id} 搜索成功: ${result.value.length} 首`);
+      merged.push(...result.value);
+    } else {
+      debugLogger.error(`[musicApi] 平台 ${adapter.id} 搜索失败: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`);
     }
-
-    const data = await response.json();
-    debugLogger.log(`[API] 响应数据 code: ${data.code}`);
-
-    if (data.code !== 200) {
-      throw new Error(`API错误: code=${data.code}`);
-    }
-
-    return data;
-  } catch (error) {
-    clearTimeout(timeoutId);
-    debugLogger.error(`[API] 请求失败: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
-  }
-}
-
-// 搜索歌曲
-export async function searchSongs(keywords: string, limit: number = 30, offset: number = 0): Promise<SearchResult> {
-  const data = await apiPost<{
-    result: {
-      songs: Array<{
-        id: number;
-        name: string;
-        artists: Array<{ name: string }>;
-        album: { name: string; picUrl?: string };
-        duration: number;
-      }>;
-      songCount: number;
-    }
-  }>('/search/get', {
-    s: keywords,
-    limit: String(limit),
-    offset: String(offset),
-    type: '1',
   });
 
-  const songs = (data.result?.songs || []).map(s => ({
-    id: s.id,
-    name: s.name,
-    artists: (s.artists || []).map(a => ({ name: a.name })),
-    album: { name: s.album?.name || '未知专辑', picUrl: toHttps(s.album?.picUrl || '') },
-    duration: s.duration || 0,
-  }));
-
-  return {
-    songs,
-    songCount: data.result?.songCount || 0,
-  };
+  debugLogger.log(`[musicApi] 聚合搜索完成，共 ${merged.length} 首歌曲`);
+  return merged;
 }
 
-// 获取歌曲播放URL
-// 使用网易云官方外链地址，支持 302 重定向到实际音频
-export async function getSongUrl(id: number): Promise<SongUrl | null> {
-  const url = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
-  debugLogger.log(`[API] 歌曲外链: ${url}`);
-  return {
-    id,
-    url,
-    type: 'mp3',
-    size: 0,
-    time: 0,
-  };
-}
-
-// 获取歌曲详情
-export async function getSongDetail(ids: number[]): Promise<NeteaseSong[]> {
-  const idsParam = encodeURIComponent(`[${ids.join(',')}]`);
-  const data = await apiGet<{
-    songs: Array<{
-      id: number;
-      name: string;
-      artists: Array<{ name: string }>;
-      album: { name: string; picUrl?: string };
-      duration: number;
-    }>;
-  }>(`/song/detail?ids=${idsParam}`);
-
-  return (data.songs || []).map(s => ({
-    id: s.id,
-    name: s.name,
-    artists: (s.artists || []).map(a => ({ name: a.name })),
-    album: { name: s.album?.name || '未知专辑', picUrl: toHttps(s.album?.picUrl || '') },
-    duration: s.duration || 0,
-  }));
-}
-
-// 获取歌词
-export async function getLyric(id: number): Promise<string> {
+// 根据歌曲 source 路由到正确适配器获取播放 URL
+export async function getPlayUrlForSong(song: Song): Promise<string | null> {
+  const adapter = getAdapter(song.source);
+  if (!adapter) {
+    debugLogger.warn(`[musicApi] 获取播放URL失败，未知平台: source="${song.source}"`);
+    return null;
+  }
+  if (!adapter.canPlay) {
+    debugLogger.warn(`[musicApi] 平台 ${adapter.id} 不支持播放: ${song.title}`);
+    return null;
+  }
+  debugLogger.log(`[musicApi] 获取播放URL: platform=${adapter.id}, id=${song.id}, title="${song.title}"`);
   try {
-    const data = await apiGet<{
-      lrc: { lyric: string };
-    }>(`/song/lyric?id=${id}&lv=1`);
-
-    if (data.lrc?.lyric) {
-      return data.lrc.lyric;
+    const url = await adapter.getPlayUrl(song);
+    if (url) {
+      debugLogger.log(`[musicApi] 播放URL获取成功: platform=${adapter.id}`);
+    } else {
+      debugLogger.warn(`[musicApi] 播放URL为空: platform=${adapter.id}, id=${song.id}`);
     }
-  } catch {
-    // 使用默认歌词
+    return url;
+  } catch (error) {
+    debugLogger.error(`[musicApi] 获取播放URL异常: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  }
+}
+
+// 根据歌曲 source 路由到正确适配器获取歌词
+export async function getLyricForSong(song: Song): Promise<string> {
+  const adapter = getAdapter(song.source);
+  if (!adapter) {
+    debugLogger.warn(`[musicApi] 获取歌词失败，未知平台: source="${song.source}"`);
+    return DEFAULT_LYRIC;
+  }
+  debugLogger.log(`[musicApi] 获取歌词: platform=${adapter.id}, id=${song.id}, title="${song.title}"`);
+  try {
+    return await adapter.getLyric(song);
+  } catch (error) {
+    debugLogger.error(`[musicApi] 获取歌词异常: ${error instanceof Error ? error.message : String(error)}`);
+    return DEFAULT_LYRIC;
+  }
+}
+
+// 向后兼容：搜索并获取完整歌曲信息（含歌词）
+// 若指定 platform 则单平台搜索，否则使用 searchAll 聚合搜索
+// 歌词异步加载，不阻塞主流程
+export async function searchAndGetFullSongs(
+  keywords: string,
+  limit: number = 20,
+  platform?: string,
+): Promise<Song[]> {
+  debugLogger.log(`[musicApi] searchAndGetFullSongs: keywords="${keywords}", limit=${limit}, platform=${platform ?? '(all)'}`);
+  const songs = platform
+    ? await searchByPlatform(platform, keywords, limit)
+    : await searchAll(keywords, limit);
+
+  if (songs.length === 0) {
+    debugLogger.log('[musicApi] searchAndGetFullSongs 未返回任何歌曲');
+    return [];
   }
 
-  return '[00:00.00]暂无歌词\n[00:05.00]\n[00:10.00]享受音乐吧~';
-}
-
-// 获取排行榜详情
-export async function getToplistDetail(id: number): Promise<NeteaseSong[]> {
-  const data = await apiGet<{
-    result: {
-      tracks: Array<{
-        id: number;
-        name: string;
-        artists: Array<{ name: string }>;
-        album: { name: string; picUrl?: string };
-        duration: number;
-      }>;
-    };
-  }>(`/playlist/detail?id=${id}`);
-
-  const tracks = data.result?.tracks || [];
-  debugLogger.log(`[API] 排行榜返回 ${tracks.length} 首歌曲`);
-
-  return tracks.map(t => ({
-    id: t.id,
-    name: t.name,
-    artists: (t.artists || []).map(a => ({ name: a.name })),
-    album: { name: t.album?.name || '未知专辑', picUrl: toHttps(t.album?.picUrl || '') },
-    duration: t.duration || 0,
-  }));
-}
-
-// 获取热门搜索
-export async function getHotSearch(): Promise<string[]> {
-  return [];
-}
-
-// 将网易云歌曲转换为应用内 Song 格式
-export function convertToAppSong(neteaseSong: NeteaseSong): import('../data/songs').Song {
-  const duration = Math.floor(neteaseSong.duration / 1000);
-  return {
-    id: String(neteaseSong.id),
-    title: neteaseSong.name,
-    artist: neteaseSong.artists?.map(a => a.name).join('、') || '未知歌手',
-    album: neteaseSong.album?.name || '未知专辑',
-    cover: neteaseSong.album?.picUrl
-      ? `${neteaseSong.album.picUrl}?param=400y400`
-      : 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-    source: '网易云',
-    duration,
-    lyrics: '[00:00.00]歌词加载中...',
-  };
-}
-
-// 搜索并获取完整歌曲信息（含歌词）
-export async function searchAndGetFullSongs(keywords: string, limit: number = 20): Promise<import('../data/songs').Song[]> {
-  const result = await searchSongs(keywords, limit);
-  if (!result.songs || result.songs.length === 0) return [];
-
-  const songs = result.songs.map(convertToAppSong);
-
-  // 异步加载歌词（不阻塞）
+  // 异步加载歌词（不阻塞主流程）
   songs.forEach(async (song) => {
     try {
-      const lyric = await getLyric(Number(song.id));
+      const lyric = await getLyricForSong(song);
       song.lyrics = lyric;
     } catch {
       // 保持默认歌词
     }
   });
 
+  debugLogger.log(`[musicApi] searchAndGetFullSongs 返回 ${songs.length} 首歌曲，歌词异步加载中`);
   return songs;
 }
 
-// 获取歌曲播放URL（带重试）
-export async function getPlayUrlWithRetry(id: number, retries: number = 2): Promise<string | null> {
-  for (let i = 0; i <= retries; i++) {
-    try {
-      const songUrl = await getSongUrl(id);
-      if (songUrl?.url) {
-        return songUrl.url;
-      }
-    } catch (e) {
-      if (i === retries) throw e;
-      await new Promise(r => setTimeout(r, 500));
+// 向后兼容：获取播放 URL（带重试）
+// 参数从 (id: number, retries) 改为 (song: Song, retries)
+export async function getPlayUrlWithRetry(song: Song, retries: number = 2): Promise<string | null> {
+  debugLogger.log(`[musicApi] 获取播放URL（带重试）: id=${song.id}, retries=${retries}`);
+  try {
+    return await getPlayUrlForSong(song);
+  } catch (error) {
+    if (retries > 0) {
+      debugLogger.warn(`[musicApi] 播放URL获取失败，${retries} 次重试机会剩余: ${error instanceof Error ? error.message : String(error)}`);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return getPlayUrlWithRetry(song, retries - 1);
     }
+    debugLogger.error(`[musicApi] 播放URL重试耗尽: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
   }
-  return null;
+}
+
+// 向后兼容：获取歌词
+// 参数从 (id: number) 改为 (song: Song)
+export async function getLyric(song: Song): Promise<string> {
+  return getLyricForSong(song);
+}
+
+// 向后兼容：获取排行榜详情，委托给 neteaseAdapter.getToplist
+// 返回 Song[] 而不是 NeteaseSong[]
+export async function getToplistDetail(id: number): Promise<Song[]> {
+  debugLogger.log(`[musicApi] 获取排行榜: id=${id}`);
+  if (!neteaseAdapter.getToplist) {
+    debugLogger.warn('[musicApi] netease 适配器未实现 getToplist');
+    return [];
+  }
+  try {
+    const songs = await neteaseAdapter.getToplist(id);
+    debugLogger.log(`[musicApi] 排行榜返回 ${songs.length} 首歌曲`);
+    return songs;
+  } catch (error) {
+    debugLogger.error(`[musicApi] 获取排行榜异常: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
+}
+
+// 向后兼容：转换为应用内 Song 格式
+// 适配器已经返回 Song 格式，直接返回原对象
+export function convertToAppSong(song: Song): Song {
+  return song;
+}
+
+// 获取热门搜索（暂未实现，返回空数组）
+export async function getHotSearch(): Promise<string[]> {
+  return [];
 }

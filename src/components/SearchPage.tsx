@@ -1,8 +1,22 @@
 import { useState, useEffect } from 'react';
 import { mockSongs } from '../data/songs';
 import { IconChevronLeft, IconSearch, IconClock, IconMore, IconTrend } from './Icons';
-import { searchAndGetFullSongs, getHotSearch } from '../services/musicApi';
+import { searchAndGetFullSongs, getHotSearch, PLATFORMS } from '../services/musicApi';
 import type { Song } from '../data/songs';
+
+// 平台显示名称和颜色
+const PLATFORM_LABELS: Record<string, string> = {
+  netease: '网易云',
+  kuwo: '酷我',
+  kugou: '酷狗',
+  qq: 'QQ',
+};
+const PLATFORM_COLORS: Record<string, string> = {
+  netease: '#E60026',
+  kuwo: '#FF8C00',
+  kugou: '#2CA2F9',
+  qq: '#31C27C',
+};
 
 // 默认热门搜索（API 不可用时使用）
 const defaultHotSearches = [
@@ -25,6 +39,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [usingFallback, setUsingFallback] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
 
   // 加载热门搜索
   useEffect(() => {
@@ -49,13 +64,13 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
     setUsingFallback(false);
 
     try {
-      const songs = await searchAndGetFullSongs(searchQuery, 20);
+      const platform = selectedPlatform === 'all' ? undefined : selectedPlatform;
+      const songs = await searchAndGetFullSongs(searchQuery, 20, platform);
       setResults(songs);
       if (!searchHistory.includes(searchQuery)) {
         setSearchHistory(prev => [searchQuery, ...prev].slice(0, 20));
       }
     } catch (e) {
-      // Fallback to local mock data filtering
       const filtered = mockSongs.filter(s =>
         s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         s.artist.toLowerCase().includes(searchQuery.toLowerCase())
@@ -78,7 +93,8 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
     setUsingFallback(false);
 
     try {
-      const songs = await searchAndGetFullSongs(title, 20);
+      const platform = selectedPlatform === 'all' ? undefined : selectedPlatform;
+      const songs = await searchAndGetFullSongs(title, 20, platform);
       setResults(songs);
       if (!searchHistory.includes(title)) {
         setSearchHistory(prev => [title, ...prev].slice(0, 20));
@@ -260,6 +276,59 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
         </div>
       )}
 
+      {/* Platform Filter Tabs - shown when results are displayed */}
+      {showResults && (
+        <div style={{
+          display: 'flex',
+          gap: '6px',
+          padding: '0 20px 10px',
+          flexShrink: 0,
+          overflowX: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          <button
+            onClick={() => { setSelectedPlatform('all'); }}
+            style={{
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-full)',
+              border: 'none',
+              fontSize: '13px',
+              fontWeight: 600,
+              fontFamily: 'inherit',
+              cursor: 'pointer',
+              transition: 'var(--transition)',
+              whiteSpace: 'nowrap',
+              background: selectedPlatform === 'all' ? 'var(--mint)' : 'var(--surface)',
+              color: selectedPlatform === 'all' ? '#fff' : 'var(--text-secondary)',
+            }}
+          >
+            全部
+          </button>
+          {PLATFORMS.map(p => (
+            <button
+              key={p.id}
+              onClick={() => { setSelectedPlatform(p.id); }}
+              style={{
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-full)',
+                border: 'none',
+                fontSize: '13px',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                transition: 'var(--transition)',
+                whiteSpace: 'nowrap',
+                background: selectedPlatform === p.id ? PLATFORM_COLORS[p.id] || 'var(--mint)' : 'var(--surface)',
+                color: selectedPlatform === p.id ? '#fff' : 'var(--text-secondary)',
+                opacity: p.canPlay ? 1 : 0.7,
+              }}
+            >
+              {p.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Content */}
       <div style={{
         flex: 1,
@@ -283,7 +352,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
                 </svg>
-                网易云 API 暂不可用，显示本地模拟数据
+                搜索 API 暂不可用，显示本地模拟数据
               </div>
             )}
             {isLoading ? (
@@ -375,13 +444,13 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                   <span style={{
                     fontSize: '10px',
                     fontWeight: 600,
-                    color: 'var(--mint)',
-                    background: 'var(--mint-light)',
+                    color: '#fff',
+                    background: PLATFORM_COLORS[song.source] || 'var(--mint)',
                     padding: '3px 8px',
                     borderRadius: 'var(--radius-full)',
                     flexShrink: 0,
                   }}>
-                    {song.source}
+                    {PLATFORM_LABELS[song.source] || song.source}
                   </span>
                   <button
                     onClick={e => {

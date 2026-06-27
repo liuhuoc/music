@@ -53,16 +53,43 @@ export function FullPlayer({
   const [showTimer, setShowTimer] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [dragValue, setDragValue] = useState(0);
+  // 'disc' = 唱片视图, 'lyrics' = 歌词视图
+  const [view, setView] = useState<'disc' | 'lyrics'>('disc');
+  const [discRotation, setDiscRotation] = useState(0);
   const progressRef = useRef<HTMLDivElement>(null);
   const lyricsRef = useRef<HTMLDivElement>(null);
+  const rotationRef = useRef(0);
+  const rafRef = useRef<number>(0);
 
   // Parse lyrics
   const parsedLyrics = parseLyrics(song.lyrics);
   const currentLineIndex = getCurrentLineIndex(parsedLyrics, progress);
 
+  // 唱片旋转动画
+  useEffect(() => {
+    if (view !== 'disc') return;
+    let lastTime = performance.now();
+    const animate = (now: number) => {
+      const delta = now - lastTime;
+      lastTime = now;
+      if (isPlaying) {
+        rotationRef.current += (delta / 1000) * 20; // 20度/秒
+        setDiscRotation(rotationRef.current);
+      }
+      rafRef.current = requestAnimationFrame(animate);
+    };
+    rafRef.current = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [isPlaying, view]);
+
+  // 切换歌曲时重置视图为唱片
+  useEffect(() => {
+    setView('disc');
+  }, [song.id]);
+
   // Scroll lyrics to current line
   useEffect(() => {
-    if (lyricsRef.current && !isDragging) {
+    if (lyricsRef.current && view === 'lyrics' && !isDragging) {
       const lines = lyricsRef.current.querySelectorAll('.lyric-line');
       const currentLine = lines[currentLineIndex] as HTMLElement;
       if (currentLine) {
@@ -76,7 +103,7 @@ export function FullPlayer({
         });
       }
     }
-  }, [currentLineIndex, isDragging]);
+  }, [currentLineIndex, isDragging, view]);
 
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressRef.current || !duration) return;
@@ -184,13 +211,15 @@ export function FullPlayer({
         flexDirection: 'column',
         height: '100%',
         padding: '0 24px',
+        // 为状态栏留出空间
+        paddingTop: 'var(--status-bar-height, 0px)',
       }}>
         {/* Header */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '16px 0',
+          padding: '12px 0',
           flexShrink: 0,
         }}>
           <button
@@ -238,60 +267,171 @@ export function FullPlayer({
           </button>
         </div>
 
-        {/* Lyrics */}
+        {/* Center Area: Disc or Lyrics */}
         <div
-          ref={lyricsRef}
+          onClick={() => setView(view === 'disc' ? 'lyrics' : 'disc')}
           style={{
             flex: 1,
-            overflowY: 'auto',
-            padding: '20px 0',
-            maskImage: 'linear-gradient(180deg, transparent 0%, black 15%, black 85%, transparent 100%)',
-            WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, black 15%, black 85%, transparent 100%)',
-          }}
-        >
-          <div style={{
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '20px',
-            padding: '40% 0',
-          }}>
-            {parsedLyrics.map((line, i) => {
-              const isCurrent = i === currentLineIndex;
-              const isPast = i < currentLineIndex;
-              return (
-                <div
-                  key={i}
-                  className="lyric-line"
-                  onClick={() => onSeek(line.time)}
-                  style={{
-                    fontSize: isCurrent ? '18px' : '15px',
-                    fontWeight: isCurrent ? 700 : 400,
-                    color: isCurrent ? 'var(--mint)' : isPast ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)',
-                    textAlign: 'center',
-                    lineHeight: 1.6,
-                    padding: '4px 16px',
-                    borderRadius: '8px',
-                    cursor: 'pointer',
-                    transition: 'var(--transition)',
-                    textShadow: isCurrent ? '0 0 20px rgba(93,190,157,0.3)' : 'none',
-                    transform: isCurrent ? 'scale(1.05)' : 'scale(1)',
-                  }}
-                >
-                  {line.text}
+            justifyContent: 'center',
+            position: 'relative',
+            overflow: 'hidden',
+            cursor: 'pointer',
+            minHeight: 0,
+          }}
+        >
+          {view === 'disc' ? (
+            <>
+              {/* Vinyl Disc */}
+              <div style={{
+                position: 'relative',
+                width: 'min(70vw, 300px)',
+                height: 'min(70vw, 300px)',
+                flexShrink: 0,
+              }}>
+                {/* Disc ring */}
+                <div style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '50%',
+                  background: 'radial-gradient(circle, #1a1a1a 30%, #0a0a0a 31%, #1a1a1a 32%, #0a0a0a 33%, #1a1a1a 34%, #111 60%, #0a0a0a 100%)',
+                  transform: `rotate(${discRotation}deg)`,
+                  transition: isPlaying ? 'none' : 'transform 0.3s ease',
+                  boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+                }}>
+                  {/* Album art in center */}
+                  <img
+                    src={song.cover}
+                    alt={song.title}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: '60%',
+                      height: '60%',
+                      borderRadius: '50%',
+                      objectFit: 'cover',
+                      boxShadow: '0 0 0 2px rgba(255,255,255,0.05)',
+                    }}
+                  />
+                  {/* Center hole */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    background: '#000',
+                    boxShadow: '0 0 0 2px rgba(255,255,255,0.1)',
+                  }} />
                 </div>
-              );
-            })}
-          </div>
+              </div>
+              {/* Song title below disc */}
+              <div style={{
+                marginTop: '24px',
+                textAlign: 'center',
+                width: '100%',
+              }}>
+                <div style={{
+                  fontSize: '22px',
+                  fontWeight: 700,
+                  color: '#fff',
+                  marginBottom: '6px',
+                }} className="line-clamp-1">
+                  {song.title}
+                </div>
+                <div style={{
+                  fontSize: '14px',
+                  color: 'rgba(255,255,255,0.5)',
+                }} className="line-clamp-1">
+                  {song.artist} - {song.album}
+                </div>
+              </div>
+              {/* Hint */}
+              <div style={{
+                marginTop: '16px',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.3)',
+              }}>
+                点击查看歌词
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Lyrics View */}
+              <div
+                ref={lyricsRef}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  flex: 1,
+                  width: '100%',
+                  overflowY: 'auto',
+                  padding: '20px 0',
+                  maskImage: 'linear-gradient(180deg, transparent 0%, black 15%, black 85%, transparent 100%)',
+                  WebkitMaskImage: 'linear-gradient(180deg, transparent 0%, black 15%, black 85%, transparent 100%)',
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '18px',
+                  padding: '30% 0',
+                }}>
+                  {parsedLyrics.map((line, i) => {
+                    const isCurrent = i === currentLineIndex;
+                    const isPast = i < currentLineIndex;
+                    return (
+                      <div
+                        key={i}
+                        className="lyric-line"
+                        onClick={() => onSeek(line.time)}
+                        style={{
+                          fontSize: isCurrent ? '18px' : '15px',
+                          fontWeight: isCurrent ? 700 : 400,
+                          color: isCurrent ? 'var(--mint)' : isPast ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)',
+                          textAlign: 'center',
+                          lineHeight: 1.6,
+                          padding: '4px 16px',
+                          borderRadius: '8px',
+                          cursor: 'pointer',
+                          transition: 'var(--transition)',
+                          textShadow: isCurrent ? '0 0 20px rgba(93,190,157,0.3)' : 'none',
+                          transform: isCurrent ? 'scale(1.05)' : 'scale(1)',
+                        }}
+                      >
+                        {line.text}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {/* Hint */}
+              <div style={{
+                padding: '8px 0',
+                fontSize: '12px',
+                color: 'rgba(255,255,255,0.3)',
+                textAlign: 'center',
+                flexShrink: 0,
+              }}>
+                点击返回唱片
+              </div>
+            </>
+          )}
         </div>
 
         {/* Controls */}
         <div style={{
-          padding: '20px 0 32px',
+          padding: '16px 0 32px',
           flexShrink: 0,
         }}>
           {/* Progress */}
-          <div style={{ marginBottom: '24px' }}>
+          <div style={{ marginBottom: '20px' }}>
             <div
               ref={progressRef}
               onClick={handleProgressClick}
@@ -344,7 +484,7 @@ export function FullPlayer({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            marginBottom: '24px',
+            marginBottom: '20px',
           }}>
             <button
               onClick={onCycleMode}
