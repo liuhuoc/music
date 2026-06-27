@@ -17,6 +17,9 @@ const config: CapacitorConfig = {
       style: 'DARK',
       backgroundColor: '#0a0a1a',
     },
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
   android: {
     allowMixedContent: true,

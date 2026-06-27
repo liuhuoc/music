@@ -17,7 +17,7 @@ export const mockSongs: Song[] = [
     artist: '周杰伦、温岚、吴宗宪',
     album: '屋顶',
     cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 268,
     lyrics: `[00:00.00]屋顶
 [00:15.00]半夜睡不着觉
@@ -39,7 +39,7 @@ export const mockSongs: Song[] = [
     artist: '周杰伦、李硕、张鑫',
     album: 'Live Collection',
     cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 245,
     isLive: true,
     lyrics: `[00:00.00]想你就写信
@@ -57,7 +57,7 @@ export const mockSongs: Song[] = [
     artist: '蔡依林、周杰伦',
     album: '看我72变',
     cover: 'https://images.unsplash.com/photo-1501612780327-45045538702b?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 294,
     lyrics: `[00:00.00]布拉格广场
 [00:08.00]琴键上透着光
@@ -73,7 +73,7 @@ export const mockSongs: Song[] = [
     artist: '李荣浩、周杰伦',
     album: 'Live Collection',
     cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&h=400&fit=crop',
-    source: 'QQ音乐',
+    source: 'qq',
     duration: 280,
     isLive: true,
     lyrics: `[00:00.00]默
@@ -88,7 +88,7 @@ export const mockSongs: Song[] = [
     artist: '周杰伦、那英',
     album: 'Live Collection',
     cover: 'https://images.unsplash.com/photo-1514320291840-2e0a9bf2a9ae?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 256,
     isLive: true,
     lyrics: `[00:00.00]因为爱情
@@ -103,7 +103,7 @@ export const mockSongs: Song[] = [
     artist: '李玟、周杰伦',
     album: 'Promise',
     cover: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400&h=400&fit=crop',
-    source: '酷狗',
+    source: 'kugou',
     duration: 234,
     lyrics: `[00:00.00]刀马旦
 [00:08.00]明明早上人还在香港
@@ -117,7 +117,7 @@ export const mockSongs: Song[] = [
     artist: '蔡依林、周杰伦',
     album: '看我72变',
     cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 278,
     lyrics: `[00:00.00]骑士精神
 [00:12.00]像骑士的忠贞
@@ -131,7 +131,7 @@ export const mockSongs: Song[] = [
     artist: 'Sarah McLachlan',
     album: 'Surfacing',
     cover: 'https://images.unsplash.com/photo-1516280440614-37939bbacd81?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 296,
     lyrics: `[00:00.00]Angel
 [00:15.00]Spend all your time waiting
@@ -144,7 +144,7 @@ export const mockSongs: Song[] = [
     artist: '马也_Crabbit',
     album: '海屿你',
     cover: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 295,
     lyrics: `[00:00.00]海屿你
 [00:10.00]浪也拍打着沙
@@ -161,7 +161,7 @@ export const mockSongs: Song[] = [
     artist: '陈粒',
     album: '小梦大半',
     cover: 'https://images.unsplash.com/photo-1496293455970-f8581aae0e3c?w=400&h=400&fit=crop',
-    source: '网易云',
+    source: 'netease',
     duration: 248,
     lyrics: `[00:00.00]小半
 [00:12.00]不敢回看
