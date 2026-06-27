@@ -1,6 +1,6 @@
 // 酷狗音乐平台适配器
 import { debugLogger } from '../../utils/debugLogger';
-import { toHttps, httpGet, DEFAULT_LYRIC, DEFAULT_COVER } from './types';
+import { toHttps, httpGet, httpGetText, DEFAULT_LYRIC, DEFAULT_COVER } from './types';
 import type { PlatformAdapter } from './types';
 import type { Song } from '../../data/songs';
 
@@ -102,21 +102,13 @@ export const kugouAdapter: PlatformAdapter = {
     const url = toHttps(rawUrl);
     debugLogger.log(`[Kugou] 获取歌词: ${song.title} - ${song.artist}`);
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
     try {
-      const response = await fetch(url, { method: 'GET', signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-      const text = await response.text();
+      const text = await httpGetText(url);
       if (text && text.trim()) {
         return text;
       }
       return DEFAULT_LYRIC;
     } catch (error) {
-      clearTimeout(timeoutId);
       debugLogger.error(`[Kugou] 获取歌词异常: ${error instanceof Error ? error.message : String(error)}`);
       return DEFAULT_LYRIC;
     }

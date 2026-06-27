@@ -51,7 +51,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
         const elapsed = Date.now() - startTime;
         debugLogger.log(`[HomePage] API 返回: ${neteaseSongs.length} 首歌曲, 耗时: ${elapsed} ms`);
 
-        const songs = neteaseSongs.slice(0, 10).map(convertToAppSong);
+        const songs = neteaseSongs.slice(0, 50).map(convertToAppSong);
         setToplistSongs(songs);
         if (songs.length === 0) {
           debugLogger.log(`[HomePage] 排行榜返回空`);
@@ -295,7 +295,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
                     border: isCurrent ? '1.5px solid var(--mint)' : '1px solid transparent',
                     cursor: 'pointer',
                     transition: 'var(--transition)',
-                    animation: `slideUp 0.3s ease ${index * 0.04}s both`,
+                    animation: `slideUp 0.3s ease ${Math.min(index * 0.03, 0.6)}s both`,
                   }}
                   onMouseEnter={e => {
                     if (!isCurrent) {

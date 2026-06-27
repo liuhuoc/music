@@ -1,5 +1,5 @@
 import { debugLogger } from '../../utils/debugLogger';
-import { toHttps, httpGet, DEFAULT_LYRIC, DEFAULT_COVER } from './types';
+import { toHttps, httpGet, httpGetText, DEFAULT_LYRIC, DEFAULT_COVER } from './types';
 import type { PlatformAdapter } from './types';
 import type { Song } from '../../data/songs';
 
@@ -92,24 +92,14 @@ export const kuwoAdapter: PlatformAdapter = {
     const url = `https://antiserver.kuwo.cn/anti.s?format=mp3&rid=${rid}&type=convert_url&response=url`;
     debugLogger.log(`[Kuwo] 获取播放URL: rid=${rid}`);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-      const response = await fetch(url, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
-      if (!response.ok) {
-        debugLogger.error(`[Kuwo] 获取播放URL失败: HTTP ${response.status}`);
-        return null;
-      }
-      const text = (await response.text()).trim();
-      if (!text) {
+      const text = await httpGetText(url);
+      const trimmed = text.trim();
+      if (!trimmed) {
         debugLogger.warn('[Kuwo] 播放URL为空');
         return null;
       }
-      const httpsUrl = toHttps(text);
-      debugLogger.log(`[Kuwo] 播放URL: ${httpsUrl}`);
+      const httpsUrl = toHttps(trimmed);
+      debugLogger.log(`[Kuwo] 播放URL: ${httpsUrl.substring(0, 80)}...`);
       return httpsUrl;
     } catch (error) {
       debugLogger.error(`[Kuwo] 获取播放URL失败: ${error instanceof Error ? error.message : String(error)}`);

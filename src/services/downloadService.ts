@@ -1,8 +1,8 @@
 // 真实文件下载服务
-// Android: 使用 Capacitor Filesystem + fetch 下载到本地
-// Web: 使用浏览器缓存模拟（IndexedDB 或内存）
+// Android: 使用 CapacitorHttp + Filesystem 下载到本地
+// Web: 使用 fetch + Blob URL 模拟下载
 
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { getPlayUrlWithRetry } from './musicApi';
 import type { Song } from '../data/songs';
@@ -99,7 +99,8 @@ export async function downloadSong(
   }
 }
 
-// Android 原生下载（使用 fetch + Filesystem.write）
+// Android 原生下载（使用 CapacitorHttp 获取数据 + Filesystem 写入）
+// CapacitorHttp 不支持流式进度，但能绕过 CORS 限制
 async function downloadNative(
   url: string,
   song: Song,
@@ -108,46 +109,49 @@ async function downloadNative(
   onProgress: ProgressCallback
 ): Promise<string | null> {
   try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (!response.body) throw new Error('No response body');
+    onProgress({
+      songId: song.id,
+      progress: 10,
+      status: 'downloading',
+      receivedBytes: 0,
+      totalBytes: 0,
+      filePath,
+      fileSize: '0 B',
+    });
 
-    const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-    const totalBytes = contentLength || 5 * 1024 * 1024; // 默认 5MB
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let receivedBytes = 0;
+    // 使用 CapacitorHttp 直接下载，responseType=arraybuffer 返回 base64
+    const response = await CapacitorHttp.request({
+      url,
+      method: 'GET',
+      responseType: 'arraybuffer',
+      connectTimeout: 30,
+      readTimeout: 60,
+    });
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      chunks.push(value);
-      receivedBytes += value.length;
-
-      const progress = Math.min(100, (receivedBytes / totalBytes) * 100);
-      onProgress({
-        songId: song.id,
-        progress,
-        status: 'downloading',
-        receivedBytes,
-        totalBytes,
-        filePath,
-        fileSize: formatFileSize(receivedBytes),
-      });
+    if (response.status < 200 || response.status >= 300) {
+      throw new Error(`HTTP ${response.status}`);
     }
 
-    // 合并 chunks
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
+    // CapacitorHttp 对于 arraybuffer 响应返回 base64 编码的字符串
+    const base64Data = typeof response.data === 'string'
+      ? response.data
+      : String(response.data || '');
+
+    if (!base64Data) {
+      throw new Error('下载数据为空');
     }
 
-    // 写入文件
-    const base64Data = uint8ArrayToBase64(result);
+    onProgress({
+      songId: song.id,
+      progress: 80,
+      status: 'downloading',
+      receivedBytes: 0,
+      totalBytes: 0,
+      filePath,
+      fileSize: '0 B',
+    });
+
+    // 直接将 base64 数据写入文件
     await Filesystem.writeFile({
       path: filePath,
       data: base64Data,
@@ -155,14 +159,17 @@ async function downloadNative(
       recursive: true,
     });
 
+    // 估算文件大小（base64 长度 * 3/4 ≈ 原始字节数）
+    const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
+
     onProgress({
       songId: song.id,
       progress: 100,
       status: 'completed',
-      receivedBytes: totalLength,
-      totalBytes,
+      receivedBytes: estimatedBytes,
+      totalBytes: estimatedBytes,
       filePath,
-      fileSize: formatFileSize(totalLength),
+      fileSize: formatFileSize(estimatedBytes),
     });
 
     return filePath;
@@ -297,13 +304,4 @@ export async function readDownloadedFile(song: Song): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-// Uint8Array 转 Base64
-function uint8ArrayToBase64(bytes: Uint8Array): string {
-  let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
 }

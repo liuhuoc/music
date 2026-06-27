@@ -1,5 +1,6 @@
 // 网易云音乐平台适配器
 // 实现 PlatformAdapter 接口，对接网易云音乐公开 API
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import type { Song } from '../../data/songs';
 import type { PlatformAdapter } from './types';
 import { httpGet, httpPost, toHttps, DEFAULT_LYRIC, DEFAULT_COVER } from './types';
@@ -96,32 +97,55 @@ export const neteaseAdapter: PlatformAdapter = {
   },
 
   // 获取播放 URL
-  // 网易云外链会 302 重定向到实际音频地址，NativeAudio 不跟随重定向
-  // 需要先解析重定向获取真实 URL
+  // 网易云外链会 302 重定向到实际音频地址
+  // NativeAudio/MediaPlayer 可能不跟随 HTTPS→HTTP 重定向，需提前解析
   async getPlayUrl(song: Song): Promise<string | null> {
     const outerUrl = `https://music.163.com/song/media/outer/url?id=${song.id}.mp3`;
     debugLogger.log(`[Netease] 播放外链: ${outerUrl}`);
+
+    // 原生平台：用 CapacitorHttp 直接解析重定向
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const response = await CapacitorHttp.request({
+          url: outerUrl,
+          method: 'GET',
+          responseType: 'text',
+          connectTimeout: 10,
+          readTimeout: 10,
+        });
+        // CapacitorHttp 跟随重定向后，response.url 是最终 URL
+        if (response.url && response.url !== outerUrl) {
+          const finalUrl = toHttps(response.url);
+          debugLogger.log(`[Netease] CapacitorHttp 解析重定向成功: ${finalUrl.substring(0, 80)}...`);
+          return finalUrl;
+        }
+        // 检查 headers 中的 Location
+        const location = response.headers?.['Location'] || response.headers?.['location'];
+        if (location) {
+          const finalUrl = toHttps(location);
+          debugLogger.log(`[Netease] Location header 解析成功: ${finalUrl.substring(0, 80)}...`);
+          return finalUrl;
+        }
+        debugLogger.warn(`[Netease] CapacitorHttp 未解析到重定向 URL`);
+      } catch (e) {
+        debugLogger.error(`[Netease] CapacitorHttp 解析失败: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    // Web 平台：用 fetch 解析重定向
     try {
-      // 用 HEAD 请求解析 302 重定向，避免下载完整音频
-      const response = await fetch(outerUrl, { method: 'HEAD' });
+      const response = await fetch(outerUrl, { redirect: 'follow' });
       if (response.url && response.url !== outerUrl) {
         const finalUrl = toHttps(response.url);
-        debugLogger.log(`[Netease] 解析重定向成功: ${finalUrl}`);
+        debugLogger.log(`[Netease] fetch 解析重定向成功: ${finalUrl.substring(0, 80)}...`);
         return finalUrl;
       }
-      // HEAD 可能不支持，尝试 GET 但只读取 URL
-      const getResponse = await fetch(outerUrl, { method: 'GET' });
-      if (getResponse.url && getResponse.url !== outerUrl) {
-        const finalUrl = toHttps(getResponse.url);
-        debugLogger.log(`[Netease] GET 解析重定向成功: ${finalUrl}`);
-        return finalUrl;
-      }
-      debugLogger.warn(`[Netease] 未能解析重定向，使用原始外链`);
-      return outerUrl;
     } catch (e) {
-      debugLogger.error(`[Netease] 解析播放URL失败: ${e instanceof Error ? e.message : String(e)}`);
-      return outerUrl;
+      debugLogger.error(`[Netease] fetch 解析失败: ${e instanceof Error ? e.message : String(e)}`);
     }
+
+    debugLogger.warn(`[Netease] 使用原始外链（可能无法播放）`);
+    return outerUrl;
   },
 
   // 获取 LRC 格式歌词
