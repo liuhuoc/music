@@ -1,8 +1,8 @@
 // 网易云音乐 API 服务层
-// 使用公共 API 代理，支持多源 fallback
+// 使用网易云音乐官方公开 API
 import { debugLogger } from '../utils/debugLogger';
 
-const API_BASE = 'https://api.bugpk.com/api/163_music';
+const API_BASE = 'https://music.163.com/api';
 
 export interface NeteaseSong {
   id: number;
@@ -32,11 +32,15 @@ export interface ToplistItem {
   description: string;
 }
 
-// 通用请求封装
-async function apiFetch<T>(params: Record<string, string>): Promise<T> {
-  const queryString = new URLSearchParams(params).toString();
-  const url = `${API_BASE}?${queryString}`;
-  debugLogger.log(`[API] 请求: ${url}`);
+// 将 http URL 转为 https
+function toHttps(url: string): string {
+  return url ? url.replace(/^http:\/\//i, 'https://') : '';
+}
+
+// 通用 GET 请求封装
+async function apiGet<T>(endpoint: string): Promise<T> {
+  const url = `${API_BASE}${endpoint}`;
+  debugLogger.log(`[API] GET 请求: ${url}`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
@@ -55,10 +59,48 @@ async function apiFetch<T>(params: Record<string, string>): Promise<T> {
     }
 
     const data = await response.json();
-    debugLogger.log(`[API] 响应数据 code: ${data.code} 有data: ${!!data.data}`);
+    debugLogger.log(`[API] 响应数据 code: ${data.code}`);
 
     if (data.code !== 200) {
-      throw new Error(`API错误: ${data.msg || data.message || '未知错误'}`);
+      throw new Error(`API错误: code=${data.code}`);
+    }
+
+    return data;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    debugLogger.error(`[API] 请求失败: ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
+}
+
+// 通用 POST 请求封装
+async function apiPost<T>(endpoint: string, body: Record<string, string>): Promise<T> {
+  const url = `${API_BASE}${endpoint}`;
+  debugLogger.log(`[API] POST 请求: ${url}`);
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(body).toString(),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    debugLogger.log(`[API] 响应状态: ${response.status} ${response.ok}`);
+
+    if (!response.ok) {
+      throw new Error(`API请求失败: ${response.status}`);
+    }
+
+    const data = await response.json();
+    debugLogger.log(`[API] 响应数据 code: ${data.code}`);
+
+    if (data.code !== 200) {
+      throw new Error(`API错误: code=${data.code}`);
     }
 
     return data;
@@ -71,115 +113,83 @@ async function apiFetch<T>(params: Record<string, string>): Promise<T> {
 
 // 搜索歌曲
 export async function searchSongs(keywords: string, limit: number = 30, offset: number = 0): Promise<SearchResult> {
-  const data = await apiFetch<{
-    data: {
+  const data = await apiPost<{
+    result: {
       songs: Array<{
         id: number;
         name: string;
-        artists: string;
-        album: string;
-        picUrl: string;
+        artists: Array<{ name: string }>;
+        album: { name: string; picUrl?: string };
         duration: number;
       }>;
-      total: number;
+      songCount: number;
     }
-  }>({
-    type: 'search',
+  }>('/search/get', {
     s: keywords,
     limit: String(limit),
     offset: String(offset),
+    type: '1',
   });
 
-  const songs = (data.data?.songs || []).map(s => ({
+  const songs = (data.result?.songs || []).map(s => ({
     id: s.id,
     name: s.name,
-    artists: (s.artists || '').split(/[,、]/).map(name => ({ name: name.trim() })).filter(a => a.name),
-    album: { name: s.album || '未知专辑', picUrl: s.picUrl || '' },
+    artists: (s.artists || []).map(a => ({ name: a.name })),
+    album: { name: s.album?.name || '未知专辑', picUrl: toHttps(s.album?.picUrl || '') },
     duration: s.duration || 0,
   }));
 
   return {
     songs,
-    songCount: data.data?.total || 0,
+    songCount: data.result?.songCount || 0,
   };
 }
 
 // 获取歌曲播放URL
+// 使用网易云官方外链地址，支持 302 重定向到实际音频
 export async function getSongUrl(id: number): Promise<SongUrl | null> {
-  const data = await apiFetch<{
-    data: {
-      url: string;
-      size: number;
-      type: string;
-      time: number;
-    }
-  }>({
-    type: 'url',
-    id: String(id),
-    level: 'standard',
-  });
-
-  if (!data.data?.url) return null;
-
+  const url = `https://music.163.com/song/media/outer/url?id=${id}.mp3`;
+  debugLogger.log(`[API] 歌曲外链: ${url}`);
   return {
     id,
-    url: data.data.url,
-    type: data.data.type || 'mp3',
-    size: data.data.size || 0,
-    time: data.data.time || 0,
+    url,
+    type: 'mp3',
+    size: 0,
+    time: 0,
   };
 }
 
 // 获取歌曲详情
 export async function getSongDetail(ids: number[]): Promise<NeteaseSong[]> {
-  const results: NeteaseSong[] = [];
+  const idsParam = encodeURIComponent(`[${ids.join(',')}]`);
+  const data = await apiGet<{
+    songs: Array<{
+      id: number;
+      name: string;
+      artists: Array<{ name: string }>;
+      album: { name: string; picUrl?: string };
+      duration: number;
+    }>;
+  }>(`/song/detail?ids=${idsParam}`);
 
-  for (const id of ids) {
-    try {
-      const data = await apiFetch<{
-        data: {
-          id: number;
-          name: string;
-          album: string;
-          singer: string;
-          picimg: string;
-        }
-      }>({
-        type: 'song',
-        id: String(id),
-      });
-
-      if (data.data) {
-        results.push({
-          id: data.data.id,
-          name: data.data.name,
-          artists: (data.data.singer || '').split(/[,、]/).map(name => ({ name: name.trim() })).filter(a => a.name),
-          album: { name: data.data.album || '未知专辑', picUrl: data.data.picimg || '' },
-          duration: 0,
-        });
-      }
-    } catch {
-      // 忽略单个歌曲错误
-    }
-  }
-
-  return results;
+  return (data.songs || []).map(s => ({
+    id: s.id,
+    name: s.name,
+    artists: (s.artists || []).map(a => ({ name: a.name })),
+    album: { name: s.album?.name || '未知专辑', picUrl: toHttps(s.album?.picUrl || '') },
+    duration: s.duration || 0,
+  }));
 }
 
 // 获取歌词
 export async function getLyric(id: number): Promise<string> {
   try {
-    const data = await apiFetch<{
-      data: {
-        lyric: string;
-      }
-    }>({
-      type: 'lyric',
-      id: String(id),
-    });
+    const data = await apiGet<{
+      lrc: { lyric: string };
+    }>(`/song/lyric?id=${id}&lv=1`);
 
-    if (data.data?.lyric) {
-      return data.data.lyric;
+    if (data.lrc?.lyric) {
+      return data.lrc.lyric;
     }
   } catch {
     // 使用默认歌词
@@ -190,64 +200,33 @@ export async function getLyric(id: number): Promise<string> {
 
 // 获取排行榜详情
 export async function getToplistDetail(id: number): Promise<NeteaseSong[]> {
-  const data = await apiFetch<{
-    data: {
-      songs?: Array<{
+  const data = await apiGet<{
+    result: {
+      tracks: Array<{
         id: number;
         name: string;
-        artists?: string;
-        artist?: string;
-        album?: string;
-        picUrl?: string;
-        duration?: number;
+        artists: Array<{ name: string }>;
+        album: { name: string; picUrl?: string };
+        duration: number;
       }>;
-      tracks?: Array<{
-        id: number;
-        name: string;
-        artists?: string;
-        artist?: string;
-        album?: string;
-        picUrl?: string;
-        duration?: number;
-      }>;
-    }
-  }>({
-    type: 'playlist',
-    id: String(id),
-  });
+    };
+  }>(`/playlist/detail?id=${id}`);
 
-  const songs = data.data?.songs || data.data?.tracks || [];
-  return songs.map(s => ({
-    id: s.id,
-    name: s.name,
-    artists: (s.artists || s.artist || '未知').split(/[,、]/).map(name => ({ name: name.trim() })).filter(a => a.name),
-    album: { name: s.album || '未知专辑', picUrl: s.picUrl || '' },
-    duration: s.duration || 0,
+  const tracks = data.result?.tracks || [];
+  debugLogger.log(`[API] 排行榜返回 ${tracks.length} 首歌曲`);
+
+  return tracks.map(t => ({
+    id: t.id,
+    name: t.name,
+    artists: (t.artists || []).map(a => ({ name: a.name })),
+    album: { name: t.album?.name || '未知专辑', picUrl: toHttps(t.album?.picUrl || '') },
+    duration: t.duration || 0,
   }));
 }
 
 // 获取热门搜索
 export async function getHotSearch(): Promise<string[]> {
-  try {
-    const data = await apiFetch<{
-      data: Array<{
-        searchWord?: string;
-        keyword?: string;
-        first?: string;
-      }>
-    }>({
-      type: 'json',
-    });
-
-    if (data.data && Array.isArray(data.data) && data.data.length > 0) {
-      return data.data.slice(0, 10).map(item =>
-        item.searchWord || item.keyword || item.first || ''
-      ).filter(Boolean);
-    }
-    return [];
-  } catch {
-    return [];
-  }
+  return [];
 }
 
 // 将网易云歌曲转换为应用内 Song 格式
