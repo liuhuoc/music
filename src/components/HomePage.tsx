@@ -1,9 +1,17 @@
 import { useState, useEffect } from 'react';
-import { mockSongs, chartTabs } from '../data/songs';
+import { chartTabs } from '../data/songs';
 import { IconSearch, IconMenu, IconFlame, IconTrend, IconMore, Equalizer } from './Icons';
 import { getToplistDetail, convertToAppSong } from '../services/musicApi';
 import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
+
+// 平台显示名称
+const PLATFORM_LABELS: Record<string, string> = {
+  netease: '网易云',
+  kuwo: '酷我',
+  kugou: '酷狗',
+  qq: 'QQ',
+};
 
 interface HomePageProps {
   onNavigate: (page: string, data?: unknown) => void;
@@ -26,7 +34,6 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
       setUsingFallback(false);
       debugLogger.log(`[HomePage] 开始加载排行榜, tab: ${activeTab}`);
       try {
-        // Map tab IDs to Netease toplist IDs
         const toplistMap: Record<string, number> = {
           hot: 3778678,    // 热歌榜
           rising: 19723756, // 飙升榜
@@ -35,8 +42,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
         const toplistId = toplistMap[activeTab];
         debugLogger.log(`[HomePage] 排行榜 ID: ${toplistId}`);
         if (!toplistId) {
-          setToplistSongs(mockSongs);
-          setUsingFallback(true);
+          setToplistSongs([]);
           return;
         }
 
@@ -48,13 +54,12 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
         const songs = neteaseSongs.slice(0, 10).map(convertToAppSong);
         setToplistSongs(songs);
         if (songs.length === 0) {
-          debugLogger.log(`[HomePage] 转换后歌曲数为 0，使用 fallback`);
-          setToplistSongs(mockSongs);
+          debugLogger.log(`[HomePage] 排行榜返回空`);
           setUsingFallback(true);
         }
       } catch (err) {
         debugLogger.error(`[HomePage] 加载失败: ${err instanceof Error ? err.message : String(err)}`);
-        setToplistSongs(mockSongs);
+        setToplistSongs([]);
         setUsingFallback(true);
       } finally {
         setIsLoading(false);
@@ -65,10 +70,10 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
   }, [activeTab]);
 
   const handlePlay = (song: Song) => {
-    onPlay(song, toplistSongs.length > 0 ? toplistSongs : mockSongs);
+    onPlay(song, toplistSongs.length > 0 ? toplistSongs : [song]);
   };
 
-  const displaySongs = toplistSongs.length > 0 ? toplistSongs : mockSongs;
+  const displaySongs = toplistSongs;
 
   return (
     <div style={{
@@ -250,7 +255,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
             </svg>
-            网易云 API 暂不可用，显示本地数据
+            排行榜加载失败，请稍后重试
           </div>
         )}
         {isLoading ? (
@@ -375,7 +380,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
                     borderRadius: 'var(--radius-full)',
                     flexShrink: 0,
                   }}>
-                    {song.source}
+                    {PLATFORM_LABELS[song.source] || song.source}
                   </span>
 
                   {/* More */}

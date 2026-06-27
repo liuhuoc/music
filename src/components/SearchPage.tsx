@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { mockSongs } from '../data/songs';
 import { IconChevronLeft, IconSearch, IconClock, IconMore, IconTrend } from './Icons';
 import { searchAndGetFullSongs, getHotSearch, PLATFORMS } from '../services/musicApi';
 import type { Song } from '../data/songs';
@@ -67,19 +66,15 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
       const platform = selectedPlatform === 'all' ? undefined : selectedPlatform;
       const songs = await searchAndGetFullSongs(searchQuery, 20, platform);
       setResults(songs);
+      if (songs.length === 0) {
+        setError('未找到相关歌曲');
+      }
       if (!searchHistory.includes(searchQuery)) {
         setSearchHistory(prev => [searchQuery, ...prev].slice(0, 20));
       }
     } catch (e) {
-      const filtered = mockSongs.filter(s =>
-        s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.artist.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setResults(filtered);
-      setUsingFallback(true);
-      if (!searchHistory.includes(searchQuery)) {
-        setSearchHistory(prev => [searchQuery, ...prev].slice(0, 20));
-      }
+      setResults([]);
+      setError('搜索失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -96,19 +91,15 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
       const platform = selectedPlatform === 'all' ? undefined : selectedPlatform;
       const songs = await searchAndGetFullSongs(title, 20, platform);
       setResults(songs);
+      if (songs.length === 0) {
+        setError('未找到相关歌曲');
+      }
       if (!searchHistory.includes(title)) {
         setSearchHistory(prev => [title, ...prev].slice(0, 20));
       }
     } catch (e) {
-      const filtered = mockSongs.filter(s =>
-        s.title.toLowerCase().includes(title.toLowerCase()) ||
-        s.artist.toLowerCase().includes(title.toLowerCase())
-      );
-      setResults(filtered);
-      setUsingFallback(true);
-      if (!searchHistory.includes(title)) {
-        setSearchHistory(prev => [title, ...prev].slice(0, 20));
-      }
+      setResults([]);
+      setError('搜索失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -352,7 +343,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>
                 </svg>
-                搜索 API 暂不可用，显示本地模拟数据
+                搜索 API 暂不可用，请稍后重试
               </div>
             )}
             {isLoading ? (

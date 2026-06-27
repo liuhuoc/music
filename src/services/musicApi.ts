@@ -180,21 +180,31 @@ export async function getLyric(song: Song): Promise<string> {
 }
 
 // 向后兼容：获取排行榜详情，委托给 neteaseAdapter.getToplist
-// 返回 Song[] 而不是 NeteaseSong[]
+// 带重试机制（最多 3 次），返回 Song[]
 export async function getToplistDetail(id: number): Promise<Song[]> {
   debugLogger.log(`[musicApi] 获取排行榜: id=${id}`);
   if (!neteaseAdapter.getToplist) {
     debugLogger.warn('[musicApi] netease 适配器未实现 getToplist');
     return [];
   }
-  try {
-    const songs = await neteaseAdapter.getToplist(id);
-    debugLogger.log(`[musicApi] 排行榜返回 ${songs.length} 首歌曲`);
-    return songs;
-  } catch (error) {
-    debugLogger.error(`[musicApi] 获取排行榜异常: ${error instanceof Error ? error.message : String(error)}`);
-    return [];
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const songs = await neteaseAdapter.getToplist(id);
+      if (songs.length > 0) {
+        debugLogger.log(`[musicApi] 排行榜返回 ${songs.length} 首歌曲 (第 ${attempt} 次尝试)`);
+        return songs;
+      }
+      debugLogger.warn(`[musicApi] 排行榜返回空 (第 ${attempt}/${maxRetries} 次)`);
+    } catch (error) {
+      debugLogger.error(`[musicApi] 排行榜异常 (第 ${attempt}/${maxRetries} 次): ${error instanceof Error ? error.message : String(error)}`);
+    }
+    if (attempt < maxRetries) {
+      await new Promise(r => setTimeout(r, 500 * attempt));
+    }
   }
+  debugLogger.warn(`[musicApi] 排行榜 ${maxRetries} 次重试均失败`);
+  return [];
 }
 
 // 向后兼容：转换为应用内 Song 格式

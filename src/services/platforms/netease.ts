@@ -95,11 +95,33 @@ export const neteaseAdapter: PlatformAdapter = {
     }
   },
 
-  // 获取播放 URL（直接使用网易云外链，302 重定向到实际音频）
+  // 获取播放 URL
+  // 网易云外链会 302 重定向到实际音频地址，NativeAudio 不跟随重定向
+  // 需要先解析重定向获取真实 URL
   async getPlayUrl(song: Song): Promise<string | null> {
-    const url = `https://music.163.com/song/media/outer/url?id=${song.id}.mp3`;
-    debugLogger.log(`[Netease] 播放外链: ${url}`);
-    return url;
+    const outerUrl = `https://music.163.com/song/media/outer/url?id=${song.id}.mp3`;
+    debugLogger.log(`[Netease] 播放外链: ${outerUrl}`);
+    try {
+      // 用 HEAD 请求解析 302 重定向，避免下载完整音频
+      const response = await fetch(outerUrl, { method: 'HEAD' });
+      if (response.url && response.url !== outerUrl) {
+        const finalUrl = toHttps(response.url);
+        debugLogger.log(`[Netease] 解析重定向成功: ${finalUrl}`);
+        return finalUrl;
+      }
+      // HEAD 可能不支持，尝试 GET 但只读取 URL
+      const getResponse = await fetch(outerUrl, { method: 'GET' });
+      if (getResponse.url && getResponse.url !== outerUrl) {
+        const finalUrl = toHttps(getResponse.url);
+        debugLogger.log(`[Netease] GET 解析重定向成功: ${finalUrl}`);
+        return finalUrl;
+      }
+      debugLogger.warn(`[Netease] 未能解析重定向，使用原始外链`);
+      return outerUrl;
+    } catch (e) {
+      debugLogger.error(`[Netease] 解析播放URL失败: ${e instanceof Error ? e.message : String(e)}`);
+      return outerUrl;
+    }
   },
 
   // 获取 LRC 格式歌词

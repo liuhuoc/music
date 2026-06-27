@@ -4,6 +4,7 @@ import { NativeAudio } from '@capgo/capacitor-native-audio';
 import type { PluginListenerHandle } from '@capacitor/core';
 import type { Song } from '../data/songs';
 import { getPlayUrlWithRetry, getLyric } from '../services/musicApi';
+import { debugLogger } from '../utils/debugLogger';
 import {
   downloadSong,
   deleteDownloadedFile,
@@ -102,7 +103,7 @@ export function usePlayer() {
       const onEnded = () => handleNext();
       const onError = () => {
         setIsPlaying(false);
-        console.warn('Audio playback error');
+        debugLogger.error('[Player] Audio playback error');
       };
 
       audio.addEventListener('timeupdate', onTimeUpdate);
@@ -147,6 +148,7 @@ export function usePlayer() {
   }, [timerActive, timerEndTime]);
 
   const play = useCallback(async (song: Song, songQueue?: Song[]) => {
+    debugLogger.log(`[Player] 播放: ${song.title} - ${song.artist} (source: ${song.source}, id: ${song.id})`);
     setCurrentSong(song);
     setIsPlaying(true);
     setProgress(0);
@@ -174,6 +176,7 @@ export function usePlayer() {
       url = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
     }
 
+    debugLogger.log(`[Player] 播放URL: ${url.substring(0, 80)}...`);
     currentUrlRef.current = url;
 
     if (isNative) {
@@ -203,7 +206,7 @@ export function usePlayer() {
         // Play
         await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
       } catch (e) {
-        console.warn('Native audio error:', e);
+        debugLogger.error(`[Player] Native audio error: ${e instanceof Error ? e.message : String(e)}`);
         // Fallback: try network URL if local file failed
         if (downloadedItem?.filePath) {
           let fallbackUrl = url;
@@ -652,7 +655,7 @@ export function usePlayer() {
           setDuration(dur.duration);
           await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
         } catch (e) {
-          console.warn('Failed to play downloaded file:', e);
+          debugLogger.error(`[Player] Failed to play downloaded file: ${e instanceof Error ? e.message : String(e)}`);
           setIsPlaying(false);
         }
       } else {
