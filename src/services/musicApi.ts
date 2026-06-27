@@ -1,5 +1,6 @@
 // 网易云音乐 API 服务层
 // 使用公共 API 代理，支持多源 fallback
+import { debugLogger } from '../utils/debugLogger';
 
 const API_BASE = 'https://api.bugpk.com/api/163_music';
 
@@ -35,7 +36,7 @@ export interface ToplistItem {
 async function apiFetch<T>(params: Record<string, string>): Promise<T> {
   const queryString = new URLSearchParams(params).toString();
   const url = `${API_BASE}?${queryString}`;
-  console.log('[API] 请求:', url);
+  debugLogger.log(`[API] 请求: ${url}`);
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15秒超时
@@ -47,14 +48,14 @@ async function apiFetch<T>(params: Record<string, string>): Promise<T> {
     });
 
     clearTimeout(timeoutId);
-    console.log('[API] 响应状态:', response.status, response.ok);
+    debugLogger.log(`[API] 响应状态: ${response.status} ${response.ok}`);
 
     if (!response.ok) {
       throw new Error(`API请求失败: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('[API] 响应数据 code:', data.code, '有data:', !!data.data);
+    debugLogger.log(`[API] 响应数据 code: ${data.code} 有data: ${!!data.data}`);
 
     if (data.code !== 200) {
       throw new Error(`API错误: ${data.msg || data.message || '未知错误'}`);
@@ -63,7 +64,7 @@ async function apiFetch<T>(params: Record<string, string>): Promise<T> {
     return data;
   } catch (error) {
     clearTimeout(timeoutId);
-    console.error('[API] 请求失败:', error);
+    debugLogger.error(`[API] 请求失败: ${error instanceof Error ? error.message : String(error)}`);
     throw error;
   }
 }

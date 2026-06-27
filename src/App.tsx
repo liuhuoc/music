@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapApp } from '@capacitor/app';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -15,6 +15,7 @@ import { DownloadPage } from './components/DownloadPage';
 import { CommentsPanel } from './components/CommentsPanel';
 import { TimerPanel } from './components/TimerPanel';
 import { Toast } from './components/Toast';
+import { debugLogger } from './utils/debugLogger';
 import type { Song } from './data/songs';
 
 type Page = 'home' | 'search' | 'queue' | 'downloads';
@@ -38,22 +39,23 @@ export default function App() {
   // 调试日志系统
   const [debugLogs, setDebugLogs] = useState<string[]>([]);
   const [showDebug, setShowDebug] = useState(false);
-  const debugLogRef = useRef<(msg: string) => void>(() => {});
-
-  debugLogRef.current = (msg: string) => {
-    const time = new Date().toLocaleTimeString();
-    setDebugLogs(prev => [...prev.slice(-50), `[${time}] ${msg}`]);
-  };
+  // 订阅全局日志
+  useEffect(() => {
+    const removeListener = debugLogger.addListener((msg) => {
+      setDebugLogs(prev => [...prev.slice(-99), msg]);
+    });
+    return removeListener;
+  }, []);
 
   // 在组件 mount 时输出初始信息
   useEffect(() => {
     if (isNative) {
-      debugLogRef.current(`平台: Native (Capacitor)`);
-      debugLogRef.current(`主题: ${effectiveTheme}`);
-      debugLogRef.current(`WebView URL: ${window.location.href}`);
-      debugLogRef.current(`UserAgent: ${navigator.userAgent.substring(0, 80)}...`);
+      debugLogger.log(`平台: Native (Capacitor)`);
+      debugLogger.log(`主题: ${effectiveTheme}`);
+      debugLogger.log(`WebView URL: ${window.location.href}`);
+      debugLogger.log(`UserAgent: ${navigator.userAgent.substring(0, 80)}...`);
     } else {
-      debugLogRef.current(`平台: Web`);
+      debugLogger.log(`平台: Web`);
     }
   }, []);
 
@@ -509,9 +511,38 @@ export default function App() {
                 color: '#0f0',
                 border: '1px solid rgba(93, 190, 157, 0.3)',
               }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
                   <span style={{ color: '#5DBE9D', fontWeight: 700 }}>Debug Log</span>
-                  <button onClick={() => setDebugLogs([])} style={{ background: 'none', border: 'none', color: '#888', fontSize: '10px', cursor: 'pointer' }}>Clear</button>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => {
+                        const logText = debugLogs.join('\n');
+                        if (navigator.clipboard) {
+                          navigator.clipboard.writeText(logText);
+                        } else {
+                          const textarea = document.createElement('textarea');
+                          textarea.value = logText;
+                          document.body.appendChild(textarea);
+                          textarea.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(textarea);
+                        }
+                        showToast('日志已复制到剪贴板');
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#5DBE9D', fontSize: '10px', cursor: 'pointer' }}
+                    >
+                      复制
+                    </button>
+                    <button
+                      onClick={() => {
+                        debugLogger.clear();
+                        setDebugLogs([]);
+                      }}
+                      style={{ background: 'none', border: 'none', color: '#888', fontSize: '10px', cursor: 'pointer' }}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
                 {debugLogs.map((log, i) => (
                   <div key={i} style={{ marginBottom: '2px', wordBreak: 'break-all' }}>{log}</div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { mockSongs, chartTabs } from '../data/songs';
 import { IconSearch, IconMenu, IconFlame, IconTrend, IconMore, Equalizer } from './Icons';
 import { getToplistDetail, convertToAppSong } from '../services/musicApi';
+import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
 
 interface HomePageProps {
@@ -23,7 +24,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
     const loadToplist = async () => {
       setIsLoading(true);
       setUsingFallback(false);
-      console.log('[HomePage] 开始加载排行榜, tab:', activeTab);
+      debugLogger.log(`[HomePage] 开始加载排行榜, tab: ${activeTab}`);
       try {
         // Map tab IDs to Netease toplist IDs
         const toplistMap: Record<string, number> = {
@@ -32,7 +33,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
           new: 3779629,    // 新歌榜
         };
         const toplistId = toplistMap[activeTab];
-        console.log('[HomePage] 排行榜 ID:', toplistId);
+        debugLogger.log(`[HomePage] 排行榜 ID: ${toplistId}`);
         if (!toplistId) {
           setToplistSongs(mockSongs);
           setUsingFallback(true);
@@ -42,17 +43,17 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
         const startTime = Date.now();
         const neteaseSongs = await getToplistDetail(toplistId);
         const elapsed = Date.now() - startTime;
-        console.log('[HomePage] API 返回:', neteaseSongs.length, '首歌曲, 耗时:', elapsed, 'ms');
+        debugLogger.log(`[HomePage] API 返回: ${neteaseSongs.length} 首歌曲, 耗时: ${elapsed} ms`);
 
         const songs = neteaseSongs.slice(0, 10).map(convertToAppSong);
         setToplistSongs(songs);
         if (songs.length === 0) {
-          console.log('[HomePage] 转换后歌曲数为 0，使用 fallback');
+          debugLogger.log(`[HomePage] 转换后歌曲数为 0，使用 fallback`);
           setToplistSongs(mockSongs);
           setUsingFallback(true);
         }
       } catch (err) {
-        console.error('[HomePage] 加载失败:', err);
+        debugLogger.error(`[HomePage] 加载失败: ${err instanceof Error ? err.message : String(err)}`);
         setToplistSongs(mockSongs);
         setUsingFallback(true);
       } finally {
