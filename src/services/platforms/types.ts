@@ -29,14 +29,15 @@ export function toHttps(url: string): string {
 
 // 通用 HTTP GET 请求封装
 // 原生平台使用 CapacitorHttp 直接调用，避免 fetch patch 的问题
+// 注意：CapacitorHttp 在 Android 上的超时单位是毫秒
 export async function httpGet<T>(url: string, headers?: Record<string, string>): Promise<T> {
   if (Capacitor.isNativePlatform()) {
     // 原生平台：直接使用 CapacitorHttp
     const response = await CapacitorHttp.get({
       url,
       headers: headers || {},
-      connectTimeout: 15,
-      readTimeout: 15,
+      connectTimeout: 15000,
+      readTimeout: 15000,
     });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`HTTP ${response.status}`);
@@ -74,8 +75,8 @@ export async function httpPost<T>(url: string, body: Record<string, string>, hea
       url,
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...headers },
       data: new URLSearchParams(body).toString(),
-      connectTimeout: 15,
-      readTimeout: 15,
+      connectTimeout: 15000,
+      readTimeout: 15000,
     });
     if (response.status < 200 || response.status >= 300) {
       throw new Error(`HTTP ${response.status}`);
@@ -111,8 +112,8 @@ export async function httpGetText(url: string, headers?: Record<string, string>)
     const response = await CapacitorHttp.get({
       url,
       headers: headers || {},
-      connectTimeout: 15,
-      readTimeout: 15,
+      connectTimeout: 15000,
+      readTimeout: 15000,
       responseType: 'text',
     });
     if (response.status < 200 || response.status >= 300) {

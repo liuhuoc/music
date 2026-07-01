@@ -110,8 +110,8 @@ export const neteaseAdapter: PlatformAdapter = {
           url: outerUrl,
           method: 'GET',
           responseType: 'text',
-          connectTimeout: 10,
-          readTimeout: 10,
+          connectTimeout: 10000,
+          readTimeout: 10000,
         });
         // CapacitorHttp 跟随重定向后，response.url 是最终 URL
         if (response.url && response.url !== outerUrl) {

@@ -120,12 +120,13 @@ async function downloadNative(
     });
 
     // 使用 CapacitorHttp 直接下载，responseType=arraybuffer 返回 base64
+    // 注意：CapacitorHttp 在 Android 上的超时单位是毫秒
     const response = await CapacitorHttp.request({
       url,
       method: 'GET',
       responseType: 'arraybuffer',
-      connectTimeout: 30,
-      readTimeout: 60,
+      connectTimeout: 30000,
+      readTimeout: 60000,
     });
 
     if (response.status < 200 || response.status >= 300) {
