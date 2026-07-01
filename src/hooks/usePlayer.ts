@@ -139,6 +139,31 @@ export function usePlayer() {
     };
   }, []);
 
+  // Load download list from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('music_player_downloads');
+      if (saved) {
+        const parsed = JSON.parse(saved) as DownloadItem[];
+        setDownloadList(parsed);
+        const completedIds = parsed.filter(d => d.status === 'completed').map(d => d.song.id);
+        setDownloads(new Set(completedIds));
+        debugLogger.log(`[Player] 已加载下载列表: ${parsed.length} 项`);
+      }
+    } catch (e) {
+      debugLogger.error(`[Player] 加载下载列表失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  // Persist download list to localStorage when it changes
+  useEffect(() => {
+    try {
+      localStorage.setItem('music_player_downloads', JSON.stringify(downloadList));
+    } catch (e) {
+      debugLogger.error(`[Player] 保存下载列表失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [downloadList]);
+
   // Timer countdown
   useEffect(() => {
     if (timerActive && timerEndTime) {
@@ -394,7 +419,13 @@ export function usePlayer() {
       try {
         await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time });
         setProgress(time);
-      } catch {}
+        // Ensure playback continues after seek (some audio engines pause on seek)
+        if (isPlaying) {
+          await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+        }
+      } catch (e) {
+        debugLogger.error(`[Player] seek 失败: ${e instanceof Error ? e.message : String(e)}`);
+      }
     } else {
       const audio = audioRef.current;
       if (audio) {
@@ -402,7 +433,7 @@ export function usePlayer() {
         setProgress(time);
       }
     }
-  }, []);
+  }, [isPlaying]);
 
   const toggleFavorite = useCallback((songId: string) => {
     setFavorites(prev => {

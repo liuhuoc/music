@@ -4,7 +4,7 @@ import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
 import type { PlatformAdapter, Platform } from './platforms/types';
 import { DEFAULT_LYRIC } from './platforms/types';
-import { neteaseAdapter } from './platforms/netease';
+import { neteaseAdapter, getHotSearch as neteaseGetHotSearch } from './platforms/netease';
 import { kuwoAdapter } from './platforms/kuwo';
 import { kugouAdapter } from './platforms/kugou';
 import { qqAdapter } from './platforms/qqmusic';
@@ -213,5 +213,12 @@ export function convertToAppSong(song: Song): Song {
 
 // 获取热门搜索（暂未实现，返回空数组）
 export async function getHotSearch(): Promise<string[]> {
+  debugLogger.log('[musicApi] 获取热门搜索');
+  try {
+    const hotWords = await neteaseGetHotSearch(20);
+    if (hotWords.length > 0) return hotWords;
+  } catch (error) {
+    debugLogger.warn(`[musicApi] 热搜获取失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
   return [];
 }

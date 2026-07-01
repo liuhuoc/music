@@ -192,3 +192,32 @@ export const neteaseAdapter: PlatformAdapter = {
 };
 
 export default neteaseAdapter;
+
+// 热搜接口响应
+interface NeteaseHotSearchResponse {
+  code: number;
+  data?: Array<{ searchWord: string }>;
+}
+
+// 获取热门搜索
+export async function getHotSearch(limit: number = 20): Promise<string[]> {
+  debugLogger.log('[Netease] 获取热门搜索');
+  try {
+    const data = await httpGet<NeteaseHotSearchResponse>(
+      'https://music.163.com/api/search/hot/detail'
+    );
+
+    if (data.code !== 200) {
+      debugLogger.warn(`[Netease] 热搜返回非 200: code=${data.code}`);
+      return [];
+    }
+
+    const list = data.data || [];
+    const hotWords = list.slice(0, limit).map(item => item.searchWord);
+    debugLogger.log(`[Netease] 热搜返回 ${hotWords.length} 个关键词`);
+    return hotWords;
+  } catch (error) {
+    debugLogger.error(`[Netease] 热搜获取失败: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
+}

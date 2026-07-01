@@ -40,7 +40,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
   const [usingFallback, setUsingFallback] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
 
-  // 加载热门搜索
+  // 加载热门搜索和搜索历史
   useEffect(() => {
     const loadHotSearch = async () => {
       try {
@@ -53,7 +53,26 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
       }
     };
     loadHotSearch();
+
+    // Load search history from localStorage
+    try {
+      const saved = localStorage.getItem('music_player_search_history');
+      if (saved) {
+        setSearchHistory(JSON.parse(saved));
+      }
+    } catch {
+      // Ignore
+    }
   }, []);
+
+  // Persist search history to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('music_player_search_history', JSON.stringify(searchHistory));
+    } catch {
+      // Ignore
+    }
+  }, [searchHistory]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;

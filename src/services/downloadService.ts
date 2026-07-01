@@ -298,24 +298,18 @@ export async function getDownloadedFileSize(song: Song): Promise<string> {
   }
 }
 
-// 读取已下载文件为 Blob URL（用于播放）
+// 获取已下载文件的本地文件路径（用于原生播放）
+// NativeAudio 支持 file:// 协议，不支持 blob://
 export async function readDownloadedFile(song: Song): Promise<string | null> {
   if (!isNative) return null;
 
   try {
-    const result = await Filesystem.readFile({
-      path: `${DOWNLOAD_DIR}/${getSafeFileName(song)}`,
+    const filePath = `${DOWNLOAD_DIR}/${getSafeFileName(song)}`;
+    const result = await Filesystem.getUri({
+      path: filePath,
       directory: Directory.Documents,
     });
-
-    // data 是 base64 编码
-    const binaryString = atob(result.data as string);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: 'audio/mpeg' });
-    return URL.createObjectURL(blob);
+    return result.uri;
   } catch {
     return null;
   }
