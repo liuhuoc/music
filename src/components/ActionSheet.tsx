@@ -1,6 +1,13 @@
 import { IconClose, IconRemove, IconPlus, IconHeart, IconShare, IconComment, IconDownload, IconTimer, IconFolderOpen } from './Icons';
 import type { Song } from '../data/songs';
 
+const PLATFORM_LABELS: Record<string, string> = {
+  netease: '网易云',
+  kuwo: '酷我',
+  kugou: '酷狗',
+  qq: 'QQ',
+};
+
 interface ActionSheetProps {
   song: Song;
   isFavorite: boolean;
@@ -136,7 +143,7 @@ export function ActionSheet({
                 borderRadius: 'var(--radius-full)',
                 flexShrink: 0,
               }}>
-                {song.source}
+                {PLATFORM_LABELS[song.source] || song.source}
               </span>
             </div>
             <span style={{

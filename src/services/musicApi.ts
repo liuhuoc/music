@@ -3,13 +3,11 @@
 import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
 import type { PlatformAdapter, Platform } from './platforms/types';
+import { DEFAULT_LYRIC } from './platforms/types';
 import { neteaseAdapter } from './platforms/netease';
 import { kuwoAdapter } from './platforms/kuwo';
 import { kugouAdapter } from './platforms/kugou';
 import { qqAdapter } from './platforms/qqmusic';
-
-// 默认歌词（获取失败时使用）
-const DEFAULT_LYRIC = '[00:00.00]暂无歌词\n[00:05.00]\n[00:10.00]享受音乐吧~';
 
 // 平台注册表：source -> 适配器
 const adapters: Record<string, PlatformAdapter> = {

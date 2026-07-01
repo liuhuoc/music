@@ -69,8 +69,9 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
     loadToplist();
   }, [activeTab]);
 
-  const handlePlay = (song: Song) => {
-    onPlay(song, toplistSongs.length > 0 ? toplistSongs : [song]);
+  const handlePlay = (song: Song, songs?: Song[]) => {
+    const queue = songs && songs.length > 0 ? songs : toplistSongs.length > 0 ? toplistSongs : [song];
+    onPlay(song, queue);
   };
 
   const displaySongs = toplistSongs;

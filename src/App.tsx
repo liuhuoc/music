@@ -400,7 +400,7 @@ export default function App() {
             queueIndex={player.queueIndex}
             onClose={handleQueueClose}
             onPlay={(song) => {
-              handlePlay(song);
+              handlePlay(song, player.queue);
             }}
             onRemoveFromQueue={player.removeFromQueue}
             onNavigate={handleNavigate}

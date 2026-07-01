@@ -80,6 +80,13 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
     }
   };
 
+  useEffect(() => {
+    if (showResults && searchQuery.trim()) {
+      handleSearch();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPlatform]);
+
   const handleHotClick = async (title: string) => {
     setSearchQuery(title);
     setIsLoading(true);
@@ -278,7 +285,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
           WebkitOverflowScrolling: 'touch',
         }}>
           <button
-            onClick={() => { setSelectedPlatform('all'); }}
+            onClick={() => setSelectedPlatform('all')}
             style={{
               padding: '6px 14px',
               borderRadius: 'var(--radius-full)',
@@ -298,7 +305,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
           {PLATFORMS.map(p => (
             <button
               key={p.id}
-              onClick={() => { setSelectedPlatform(p.id); }}
+              onClick={() => setSelectedPlatform(p.id)}
               style={{
                 padding: '6px 14px',
                 borderRadius: 'var(--radius-full)',

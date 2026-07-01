@@ -17,10 +17,9 @@ function StatusBarInit() {
           document.documentElement.style.setProperty('--status-bar-height', height + 'px')
         })
         .catch(() => {
-          // fallback: Android 通常 24dp
-          const dp = window.innerWidth < 600 ? 24 : 0
-          const px = dp * (window.devicePixelRatio || 2)
-          document.documentElement.style.setProperty('--status-bar-height', px + 'px')
+          // fallback: Android 状态栏通常约 24px (CSS 像素)
+          const height = window.innerWidth < 600 ? 24 : 0
+          document.documentElement.style.setProperty('--status-bar-height', height + 'px')
         })
     }
   }, [])

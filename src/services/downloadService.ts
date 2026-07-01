@@ -18,6 +18,7 @@ export interface DownloadProgress {
   totalBytes: number;
   filePath?: string;
   fileSize: string;
+  sizeBytes: number;
 }
 
 type ProgressCallback = (progress: DownloadProgress) => void;
@@ -81,21 +82,27 @@ export async function downloadSong(
   await ensureDownloadDir();
 
   // 获取播放 URL
-  let url: string | null = null;
-  try {
-    url = await getPlayUrlWithRetry(song, 2);
-  } catch {
-    url = null;
+  const url = await getPlayUrlWithRetry(song, 2);
+  if (!url) {
+    onProgress({
+      songId: song.id,
+      progress: 0,
+      status: 'failed',
+      receivedBytes: 0,
+      totalBytes: 0,
+      fileSize: '0 B',
+      sizeBytes: 0,
+    });
+    return null;
   }
 
-  const downloadUrl = url || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
   const fileName = getSafeFileName(song);
   const filePath = `${DOWNLOAD_DIR}/${fileName}`;
 
   if (isNative) {
-    return downloadNative(downloadUrl, song, filePath, fileName, onProgress);
+    return downloadNative(url, song, filePath, fileName, onProgress);
   } else {
-    return downloadWeb(downloadUrl, song, onProgress);
+    return downloadWeb(url, song, onProgress);
   }
 }
 
@@ -117,6 +124,7 @@ async function downloadNative(
       totalBytes: 0,
       filePath,
       fileSize: '0 B',
+      sizeBytes: 0,
     });
 
     // 使用 CapacitorHttp 直接下载，responseType=arraybuffer 返回 base64
@@ -142,14 +150,18 @@ async function downloadNative(
       throw new Error('下载数据为空');
     }
 
+    // 估算文件大小（base64 长度 * 3/4 ≈ 原始字节数）
+    const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
+
     onProgress({
       songId: song.id,
       progress: 80,
       status: 'downloading',
-      receivedBytes: 0,
-      totalBytes: 0,
+      receivedBytes: estimatedBytes,
+      totalBytes: estimatedBytes,
       filePath,
-      fileSize: '0 B',
+      fileSize: formatFileSize(estimatedBytes),
+      sizeBytes: estimatedBytes,
     });
 
     // 直接将 base64 数据写入文件
@@ -160,9 +172,6 @@ async function downloadNative(
       recursive: true,
     });
 
-    // 估算文件大小（base64 长度 * 3/4 ≈ 原始字节数）
-    const estimatedBytes = Math.floor(base64Data.length * 3 / 4);
-
     onProgress({
       songId: song.id,
       progress: 100,
@@ -171,6 +180,7 @@ async function downloadNative(
       totalBytes: estimatedBytes,
       filePath,
       fileSize: formatFileSize(estimatedBytes),
+      sizeBytes: estimatedBytes,
     });
 
     return filePath;
@@ -183,6 +193,7 @@ async function downloadNative(
       receivedBytes: 0,
       totalBytes: 0,
       fileSize: '0 B',
+      sizeBytes: 0,
     });
     return null;
   }
@@ -220,6 +231,7 @@ async function downloadWeb(
         receivedBytes,
         totalBytes,
         fileSize: formatFileSize(receivedBytes),
+        sizeBytes: receivedBytes,
       });
     }
 
@@ -237,6 +249,7 @@ async function downloadWeb(
       totalBytes,
       filePath: blobUrl,
       fileSize: formatFileSize(totalLength),
+      sizeBytes: totalLength,
     });
 
     return blobUrl;
@@ -249,6 +262,7 @@ async function downloadWeb(
       receivedBytes: 0,
       totalBytes: 0,
       fileSize: '0 B',
+      sizeBytes: 0,
     });
     return null;
   }

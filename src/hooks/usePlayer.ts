@@ -24,6 +24,7 @@ export interface DownloadItem {
   addedAt: number;
   fileSize: string;
   filePath?: string;
+  sizeBytes: number;
 }
 
 export function usePlayer() {
@@ -50,6 +51,9 @@ export function usePlayer() {
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const currentUrlRef = useRef<string>('');
   const listenersRef = useRef<PluginListenerHandle[]>([]);
+  const handleNextRef = useRef<() => void>(() => {});
+  const handlePrevRef = useRef<() => void | Promise<void>>(() => {});
+  const pauseRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Initialize native audio
   useEffect(() => {
@@ -64,7 +68,7 @@ export function usePlayer() {
       // Listen for playback completion
       NativeAudio.addListener('complete', (event) => {
         if (event.assetId === AUDIO_ASSET_ID) {
-          handleNext();
+          handleNextRef.current();
         }
       }).then(l => listenersRef.current.push(l));
 
@@ -87,9 +91,9 @@ export function usePlayer() {
           }
           // Handle remote controls
           if (event.reason === 'remoteNext') {
-            handleNext();
+            handleNextRef.current();
           } else if (event.reason === 'remotePrevious') {
-            handlePrev();
+            handlePrevRef.current();
           }
         }
       }).then(l => listenersRef.current.push(l));
@@ -100,7 +104,7 @@ export function usePlayer() {
 
       const onTimeUpdate = () => setProgress(audio.currentTime);
       const onLoadedMetadata = () => setDuration(audio.duration || 0);
-      const onEnded = () => handleNext();
+      const onEnded = () => handleNextRef.current();
       const onError = () => {
         setIsPlaying(false);
         debugLogger.error('[Player] Audio playback error');
@@ -136,7 +140,7 @@ export function usePlayer() {
         const remaining = Math.max(0, timerEndTime - Date.now());
         setTimerRemaining(remaining);
         if (remaining <= 0) {
-          pause();
+          pauseRef.current();
           setTimerActive(false);
           setTimerEndTime(null);
         }
@@ -371,6 +375,13 @@ export function usePlayer() {
     }
   }, [queue, queueIndex, playMode, currentSong, progress, play]);
 
+  // Sync callback refs to avoid stale closures in event listeners
+  useEffect(() => {
+    handleNextRef.current = handleNext;
+    handlePrevRef.current = handlePrev;
+    pauseRef.current = pause;
+  }, [handleNext, handlePrev, pause]);
+
   const seekTo = useCallback(async (time: number) => {
     if (isNative) {
       try {
@@ -402,95 +413,78 @@ export function usePlayer() {
 
   // ===== Download Management (Real Downloads) =====
   const startDownload = useCallback((song: Song) => {
+    let shouldStart = false;
+    let isResume = false;
+
     setDownloadList(prev => {
       const existing = prev.find(d => d.song.id === song.id);
       if (existing) {
         if (existing.status === 'paused') {
-          // Trigger resume by updating status and restarting download
-          const updatedList = prev.map(d =>
+          shouldStart = true;
+          isResume = true;
+          return prev.map(d =>
             d.song.id === song.id
               ? { ...d, status: 'downloading' as const }
               : d
           );
-
-          // Restart download
-          const controller = new AbortController();
-          abortControllersRef.current.set(song.id, controller);
-
-          downloadSong(song, (p: DownloadProgress) => {
-            setDownloadList(current => {
-              return current.map(d => {
-                if (d.song.id === p.songId) {
-                  const updated: DownloadItem = {
-                    ...d,
-                    progress: p.progress,
-                    status: p.status,
-                    fileSize: p.fileSize,
-                    filePath: p.filePath || d.filePath,
-                  };
-                  if (p.status === 'completed') {
-                    abortControllersRef.current.delete(song.id);
-                    setDownloads(prevD => {
-                      const next = new Set(prevD);
-                      next.add(song.id);
-                      return next;
-                    });
-                  } else if (p.status === 'failed') {
-                    abortControllersRef.current.delete(song.id);
-                  }
-                  return updated;
-                }
-                return d;
-              });
-            });
-          });
-
-          return updatedList;
         }
         return prev;
       }
 
+      shouldStart = true;
       const newItem: DownloadItem = {
         song,
         progress: 0,
         status: 'downloading',
         addedAt: Date.now(),
         fileSize: '0 B',
+        sizeBytes: 0,
       };
+      return [...prev, newItem];
+    });
 
-      // Start real download
-      const controller = new AbortController();
-      abortControllersRef.current.set(song.id, controller);
+    if (!shouldStart) return;
 
-      downloadSong(song, (p: DownloadProgress) => {
-        setDownloadList(current => {
-          return current.map(d => {
-            if (d.song.id === p.songId) {
-              const updated: DownloadItem = {
-                ...d,
-                progress: p.progress,
-                status: p.status,
-                fileSize: p.fileSize,
-                filePath: p.filePath || d.filePath,
-              };
-              if (p.status === 'completed') {
-                abortControllersRef.current.delete(song.id);
-                setDownloads(prevD => {
-                  const next = new Set(prevD);
-                  next.add(song.id);
-                  return next;
-                });
-              } else if (p.status === 'failed') {
-                abortControllersRef.current.delete(song.id);
-              }
-              return updated;
+    // For resume, reset progress to 0 since we can't truly resume
+    if (isResume) {
+      setDownloadList(prev => prev.map(d =>
+        d.song.id === song.id
+          ? { ...d, progress: 0, sizeBytes: 0, fileSize: '0 B' }
+          : d
+      ));
+    }
+
+    // Start real download
+    const controller = new AbortController();
+    abortControllersRef.current.set(song.id, controller);
+
+    downloadSong(song, (p: DownloadProgress) => {
+      setDownloadList(current => {
+        return current.map(d => {
+          if (d.song.id === p.songId) {
+            const updated: DownloadItem = {
+              ...d,
+              progress: p.progress,
+              status: p.status,
+              fileSize: p.fileSize,
+              filePath: p.filePath || d.filePath,
+              sizeBytes: p.sizeBytes ?? d.sizeBytes,
+            };
+            if (p.status === 'completed') {
+              abortControllersRef.current.delete(song.id);
+              setDownloads(prevD => {
+                const next = new Set(prevD);
+                next.add(song.id);
+                return next;
+              });
+            } else if (p.status === 'failed') {
+              abortControllersRef.current.delete(song.id);
             }
-            return d;
-          });
+            return updated;
+          }
+          return d;
         });
       });
-
-      return [...prev, newItem];
     });
   }, []);
 
@@ -675,9 +669,10 @@ export function usePlayer() {
     const downloading = downloadList.filter(d => d.status === 'downloading').length;
     const completed = downloadList.filter(d => d.status === 'completed').length;
     const paused = downloadList.filter(d => d.status === 'paused').length;
-    const totalSize = downloadList
+    const totalBytes = downloadList
       .filter(d => d.status === 'completed')
-      .reduce((acc, d) => acc + parseFloat(d.fileSize), 0);
+      .reduce((acc, d) => acc + (d.sizeBytes || 0), 0);
+    const totalSize = totalBytes / (1024 * 1024);
     return { downloading, completed, paused, totalSize, total: downloadList.length };
   }, [downloadList]);
 
@@ -712,21 +707,32 @@ export function usePlayer() {
   }, []);
 
   const removeFromQueue = useCallback((songId: string) => {
+    let newQueueIndex = queueIndex;
+    let shouldPlayNext = false;
+    let nextSong: Song | null = null;
+
     setQueue(prev => {
       const idx = prev.findIndex(s => s.id === songId);
       if (idx < 0) return prev;
       const next = prev.filter(s => s.id !== songId);
       if (idx < queueIndex) {
-        setQueueIndex(queueIndex - 1);
+        newQueueIndex = queueIndex - 1;
       } else if (idx === queueIndex && next.length > 0) {
-        const nextIdx = idx % next.length;
-        setQueueIndex(nextIdx);
+        newQueueIndex = idx % next.length;
         if (currentSong?.id === songId) {
-          play(next[nextIdx]);
+          shouldPlayNext = true;
+          nextSong = next[newQueueIndex];
         }
       }
       return next;
     });
+
+    if (newQueueIndex !== queueIndex) {
+      setQueueIndex(newQueueIndex);
+    }
+    if (shouldPlayNext && nextSong) {
+      play(nextSong);
+    }
   }, [queueIndex, currentSong, play]);
 
   const playNext = useCallback((song: Song) => {
