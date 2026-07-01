@@ -66,6 +66,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
+      - name: Generate version number
+        id: version
+        run: |
+          # Get total commit count for version
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          VERSION="1.0.${COMMIT_COUNT}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
       - name: Sync Capacitor
         run: npx cap sync android
 
@@ -121,22 +131,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Auto-update Latest Build release on push to main
-      - name: Update Latest Build Release
+      # Create GitHub Release on push to main (each build gets a new version)
+      - name: Create Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-build
-          name: Latest Build
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.version }}
           files: |
             android/app/build/outputs/apk/release/app-release.apk
           draft: false
           prerelease: true
           body: |
-            Latest build from main branch
+            Build ${{ steps.version.outputs.version }}
             Commit: ${{ github.sha }}
             Date: ${{ github.event.head_commit.timestamp }}
-          append_body: false
+          generate_release_notes: true
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

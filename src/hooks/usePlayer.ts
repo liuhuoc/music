@@ -63,6 +63,7 @@ export function usePlayer() {
   const currentAssetIdRef = useRef<string>('');
   const progressRef = useRef(0);
   const durationRef = useRef(0);
+  const unknownAssetWarnedRef = useRef(false);
 
   // Initialize native audio
   useEffect(() => {
@@ -101,18 +102,30 @@ export function usePlayer() {
         if (event.assetId === currentAssetIdRef.current) {
           setProgress(event.currentTime);
           progressRef.current = event.currentTime;
+          // Only log every 5 seconds to avoid spam
+          if (Math.floor(event.currentTime) % 10 === 0 && event.currentTime > 0) {
+            debugLogger.log(`[Player] currentTime: ${event.currentTime.toFixed(1)}s, duration: ${durationRef.current?.toFixed(1)}s`);
+          }
+        } else {
+          // Log first occurrence of unknown asset
+          if (!unknownAssetWarnedRef.current) {
+            debugLogger.log(`[Player] currentTime事件: 未知assetId=${event.assetId}, 当前=${currentAssetIdRef.current}`);
+            unknownAssetWarnedRef.current = true;
+          }
         }
       }).then(l => listenersRef.current.push(l));
 
       // Listen for playback state changes (lock screen controls)
       NativeAudio.addListener('playbackState', (event) => {
+        debugLogger.log(`[Player] playbackState: asset=${event.assetId}, isPlaying=${event.isPlaying}, reason=${event.reason}, duration=${event.duration}`);
         if (event.assetId === currentAssetIdRef.current) {
           setIsPlaying(event.isPlaying);
           if (event.currentTime !== undefined) {
             setProgress(event.currentTime);
             progressRef.current = event.currentTime;
           }
-          if (event.duration !== undefined) {
+          if (event.duration !== undefined && event.duration > 0) {
+            debugLogger.log(`[Player] playbackState更新duration: ${event.duration}`);
             setDuration(event.duration);
             durationRef.current = event.duration;
           }
@@ -124,6 +137,8 @@ export function usePlayer() {
             debugLogger.log('[Player] 远程控制: 上一首');
             handlePrevRef.current();
           }
+        } else {
+          debugLogger.log(`[Player] playbackState事件: 忽略旧asset=${event.assetId}`);
         }
       }).then(l => listenersRef.current.push(l));
     } else {
@@ -369,15 +384,36 @@ export function usePlayer() {
       currentUrlRef.current = url;
 
       if (isNative) {
-        // Stop and unload previous audio first (with old asset ID)
+        // Stop and unload previous audio first - must await to ensure cleanup
+        debugLogger.log(`[Player] 清理旧音频: oldAsset=${oldAssetId || 'none'}`);
+
+        const cleanupAsset = async (id: string) => {
+          if (!id) return;
+          try {
+            debugLogger.log(`[Player] 停止旧音频: ${id}`);
+            await NativeAudio.stop({ assetId: id });
+          } catch (e) {
+            debugLogger.log(`[Player] stop旧音频失败(可能未加载): ${id}`);
+          }
+          try {
+            debugLogger.log(`[Player] 卸载旧音频: ${id}`);
+            await NativeAudio.unload({ assetId: id });
+          } catch (e) {
+            debugLogger.log(`[Player] unload旧音频失败(可能未加载): ${id}`);
+          }
+        };
+
+        // Clean up old dynamic asset
         if (oldAssetId) {
-          NativeAudio.stop({ assetId: oldAssetId }).catch(() => {});
-          NativeAudio.unload({ assetId: oldAssetId }).catch(() => {});
+          await cleanupAsset(oldAssetId);
         }
-        // Also try to clean up any leftover with the old static ID
-        NativeAudio.stop({ assetId: 'music_player_current' }).catch(() => {});
-        NativeAudio.unload({ assetId: 'music_player_current' }).catch(() => {});
-        await new Promise(r => setTimeout(r, 100));
+
+        // Also clean up legacy static ID (for app restores from background)
+        await cleanupAsset('music_player_current');
+
+        // Small delay to ensure full cleanup
+        await new Promise(r => setTimeout(r, 200));
+        debugLogger.log('[Player] 旧音频清理完成');
 
         // Preload new audio with new asset ID
         await NativeAudio.preload({
@@ -539,22 +575,31 @@ export function usePlayer() {
   }, [handleNext, handlePrev, pause]);
 
   const seekTo = useCallback(async (time: number) => {
-    if (!durationRef.current || durationRef.current <= 0) {
-      debugLogger.warn('[Player] seek失败: duration无效');
+    const dur = durationRef.current;
+    debugLogger.log(`[Player] seekTo 请求: ${time.toFixed(2)}s, duration=${dur?.toFixed(2)}, assetId=${currentAssetIdRef.current}`);
+
+    if (isNative && !currentAssetIdRef.current) {
+      debugLogger.warn('[Player] seek失败: 无当前assetId');
       return;
     }
-    if (isNative && !currentAssetIdRef.current) return;
 
-    const safeTime = Math.max(0, Math.min(time, Math.max(0, durationRef.current - 2)));
-    debugLogger.log(`[Player] seekTo: ${time.toFixed(2)}s -> ${safeTime.toFixed(2)}s (duration: ${durationRef.current.toFixed(2)}s)`);
+    let safeTime = time;
+    if (dur && dur > 0) {
+      safeTime = Math.max(0, Math.min(time, dur - 2));
+    } else {
+      safeTime = Math.max(0, time);
+      debugLogger.warn('[Player] duration无效，不做上限限制');
+    }
 
     isSeekingRef.current = true;
 
     try {
       if (isNative) {
+        debugLogger.log(`[Player] 调用NativeAudio.setCurrentTime: asset=${currentAssetIdRef.current}, time=${safeTime.toFixed(2)}`);
         await NativeAudio.setCurrentTime({ assetId: currentAssetIdRef.current, time: safeTime });
         setProgress(safeTime);
         progressRef.current = safeTime;
+        debugLogger.log(`[Player] setCurrentTime调用成功`);
       } else {
         const audio = audioRef.current;
         if (audio) {
