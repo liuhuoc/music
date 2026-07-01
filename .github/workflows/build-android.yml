@@ -121,6 +121,26 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Auto-update Latest Build release on push to main
+      - name: Update Latest Build Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-build
+          name: Latest Build
+          files: |
+            android/app/build/outputs/apk/release/app-release.apk
+          draft: false
+          prerelease: true
+          body: |
+            Latest build from main branch
+            Commit: ${{ github.sha }}
+            Date: ${{ github.event.head_commit.timestamp }}
+          append_body: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # Cleanup keystore
       - name: Cleanup Keystore
         if: always() && github.event.inputs.build_type != 'debug'

@@ -667,7 +667,7 @@ export function FullPlayer({
 
       {/* Comments Panel */}
       {showComments && (
-        <CommentsPanel onClose={() => setShowComments(false)} />
+        <CommentsPanel song={song} onClose={() => setShowComments(false)} />
       )}
 
       {/* Timer Panel */}

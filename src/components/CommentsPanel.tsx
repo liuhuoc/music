@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { IconChevronLeft, IconRefresh, IconSearch, IconThumbUp, IconThumbDown, IconSend } from './Icons';
+import { IconChevronLeft, IconRefresh, IconThumbUp, IconThumbDown, IconSend } from './Icons';
 import { getComments } from '../services/musicApi';
 import type { Song } from '../data/songs';
 
