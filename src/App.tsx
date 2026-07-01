@@ -447,7 +447,7 @@ export default function App() {
 
         {/* Comments Panel */}
         {showComments && (
-          <CommentsPanel onClose={() => setShowComments(false)} />
+          <CommentsPanel song={player.currentSong} onClose={() => setShowComments(false)} />
         )}
 
         {/* Timer Panel */}

@@ -1,15 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { IconChevronLeft, IconRefresh, IconSearch, IconThumbUp, IconThumbDown, IconSend } from './Icons';
-import { comments } from '../data/songs';
+import { getComments } from '../services/musicApi';
+import type { Song } from '../data/songs';
 
 interface CommentsPanelProps {
+  song: Song | null;
   onClose: () => void;
 }
 
-export function CommentsPanel({ onClose }: CommentsPanelProps) {
+interface CommentItem {
+  id: string;
+  user: string;
+  avatar: string;
+  content: string;
+  date: string;
+  location: string;
+  likes: number;
+}
+
+export function CommentsPanel({ song, onClose }: CommentsPanelProps) {
+  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
   const [likedComments, setLikedComments] = useState<Set<string>>(new Set());
   const [dislikedComments, setDislikedComments] = useState<Set<string>>(new Set());
   const [commentText, setCommentText] = useState('');
+
+  const loadComments = async () => {
+    if (!song) return;
+    setIsLoading(true);
+    try {
+      const data = await getComments(song, 30);
+      setComments(data);
+    } catch {
+      setComments([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (song) {
+      loadComments();
+      setLikedComments(new Set());
+      setDislikedComments(new Set());
+    }
+  }, [song]);
 
   const toggleLike = (id: string) => {
     setLikedComments(prev => {
@@ -99,11 +134,12 @@ export function CommentsPanel({ onClose }: CommentsPanelProps) {
           </button>
           <span style={{ fontSize: '16px', fontWeight: 700 }}>评论</span>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer' }}>
+            <button
+              onClick={loadComments}
+              disabled={isLoading}
+              style={{ background: 'none', border: 'none', padding: '8px', cursor: isLoading ? 'wait' : 'pointer', opacity: isLoading ? 0.5 : 1 }}
+            >
               <IconRefresh size={18} color="var(--text-secondary)" />
-            </button>
-            <button style={{ background: 'none', border: 'none', padding: '8px', cursor: 'pointer' }}>
-              <IconSearch size={18} color="var(--text-secondary)" />
             </button>
           </div>
         </div>
@@ -114,6 +150,36 @@ export function CommentsPanel({ onClose }: CommentsPanelProps) {
           overflowY: 'auto',
           padding: '12px 20px',
         }}>
+          {isLoading ? (
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '60px 20px',
+              color: 'var(--text-tertiary)',
+            }}>
+              <div style={{
+                width: '30px',
+                height: '30px',
+                border: '2px solid var(--border)',
+                borderTopColor: 'var(--mint)',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              <p style={{ marginTop: '12px', fontSize: '13px' }}>加载评论中...</p>
+            </div>
+          ) : comments.length === 0 ? (
+            <div style={{
+              textAlign: 'center',
+              padding: '60px 20px',
+              color: 'var(--text-tertiary)',
+            }}>
+              <p style={{ fontSize: '14px' }}>暂无评论</p>
+              <p style={{ marginTop: '4px', fontSize: '12px' }}>快来抢沙发吧~</p>
+            </div>
+          ) : (
+            <>
           {comments.map((comment, i) => (
             <div
               key={comment.id}
@@ -262,6 +328,8 @@ export function CommentsPanel({ onClose }: CommentsPanelProps) {
               过度用眼，请注意用眼时间
             </span>
           </div>
+            </>
+          )}
         </div>
 
         {/* Input */}

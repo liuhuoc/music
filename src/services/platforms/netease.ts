@@ -221,3 +221,96 @@ export async function getHotSearch(limit: number = 20): Promise<string[]> {
     return [];
   }
 }
+
+// 评论接口响应
+interface NeteaseCommentUser {
+  nickname: string;
+  avatarUrl: string;
+  userId: number;
+  avatarDetail?: { identityIconUrl: string };
+}
+
+interface NeteaseComment {
+  commentId: number;
+  content: string;
+  user: NeteaseCommentUser;
+  time: number;
+  likedCount: number;
+  ipLocation?: { location: string };
+}
+
+interface NeteaseCommentResponse {
+  code: number;
+  hotComments?: NeteaseComment[];
+  comments?: NeteaseComment[];
+  total?: number;
+}
+
+export interface CommentItem {
+  id: string;
+  user: string;
+  avatar: string;
+  content: string;
+  date: string;
+  location: string;
+  likes: number;
+}
+
+// 获取歌曲评论
+export async function getComments(songId: string, limit: number = 20): Promise<CommentItem[]> {
+  debugLogger.log(`[Netease] 获取评论: id=${songId}`);
+  try {
+    const data = await httpPost<NeteaseCommentResponse>(
+      'https://music.163.com/api/v1/resource/comments/R_SO_4_' + songId,
+      {
+        limit: String(limit),
+        offset: '0',
+      }
+    );
+
+    if (data.code !== 200) {
+      debugLogger.warn(`[Netease] 评论返回非 200: code=${data.code}`);
+      return [];
+    }
+
+    const rawComments = data.hotComments && data.hotComments.length > 0
+      ? [...data.hotComments, ...(data.comments || []).slice(0, limit - data.hotComments.length)]
+      : (data.comments || []);
+
+    const result = rawComments.slice(0, limit).map(c => ({
+      id: String(c.commentId),
+      user: c.user.nickname,
+      avatar: toHttps(c.user.avatarUrl),
+      content: c.content,
+      date: formatCommentTime(c.time),
+      location: c.ipLocation?.location || '未知',
+      likes: c.likedCount,
+    }));
+
+    debugLogger.log(`[Netease] 评论返回 ${result.length} 条`);
+    return result;
+  } catch (error) {
+    debugLogger.error(`[Netease] 评论获取失败: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
+}
+
+function formatCommentTime(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+
+  if (days === 0) {
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    if (hours === 0) {
+      const mins = Math.floor(diff / (1000 * 60));
+      return `${mins}分钟前`;
+    }
+    return `${hours}小时前`;
+  } else if (days < 7) {
+    return `${days}天前`;
+  } else {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+}
