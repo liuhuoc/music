@@ -56,6 +56,8 @@ export function usePlayer() {
   const pauseRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const isPlayLockedRef = useRef(false);
   const currentSongIdRef = useRef<string | null>(null);
+  const isSeekingRef = useRef(false);
+  const isRestoringRef = useRef(false);
 
   // Initialize native audio
   useEffect(() => {
@@ -67,13 +69,16 @@ export function usePlayer() {
         backgroundPlayback: true,
       }).catch(() => {});
 
-      // Stop any leftover audio from previous page loads
-      NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-      NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+      // Don't stop previous audio here - let it continue playing if app is restored from background
+      // We'll sync state from localStorage and check if audio is actually playing
 
       // Listen for playback completion
       NativeAudio.addListener('complete', (event) => {
         if (event.assetId === AUDIO_ASSET_ID) {
+          if (isSeekingRef.current) {
+            debugLogger.log('[Player] seek期间忽略complete事件');
+            return;
+          }
           handleNextRef.current();
         }
       }).then(l => listenersRef.current.push(l));
@@ -110,7 +115,13 @@ export function usePlayer() {
 
       const onTimeUpdate = () => setProgress(audio.currentTime);
       const onLoadedMetadata = () => setDuration(audio.duration || 0);
-      const onEnded = () => handleNextRef.current();
+      const onEnded = () => {
+        if (isSeekingRef.current) {
+          debugLogger.log('[Player] seek期间忽略ended事件');
+          return;
+        }
+        handleNextRef.current();
+      };
       const onError = () => {
         setIsPlaying(false);
         debugLogger.error('[Player] Audio playback error');
@@ -181,16 +192,28 @@ export function usePlayer() {
 
         // Check if native audio is actually playing
         if (isNative && state.currentSong) {
-          NativeAudio.isPlaying({ assetId: AUDIO_ASSET_ID })
-            .then(result => {
-              if (result.isPlaying) {
-                setIsPlaying(true);
-                NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID })
-                  .then(d => setDuration(d.duration))
-                  .catch(() => {});
+          isRestoringRef.current = true;
+          Promise.all([
+            NativeAudio.isPlaying({ assetId: AUDIO_ASSET_ID }).catch(() => ({ isPlaying: false })),
+            NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID }).catch(() => ({ duration: 0 })),
+            NativeAudio.getCurrentTime({ assetId: AUDIO_ASSET_ID }).catch(() => ({ currentTime: 0 })),
+          ]).then(([playResult, durResult, timeResult]) => {
+            if (playResult.isPlaying) {
+              debugLogger.log('[Player] 检测到原生音频正在播放，同步状态');
+              setIsPlaying(true);
+              if (durResult.duration > 0) {
+                setDuration(durResult.duration);
               }
-            })
-            .catch(() => {});
+              if (timeResult.currentTime !== undefined) {
+                setProgress(timeResult.currentTime);
+              }
+            } else {
+              debugLogger.log('[Player] 原生音频未播放，保持暂停状态');
+            }
+            isRestoringRef.current = false;
+          }).catch(() => {
+            isRestoringRef.current = false;
+          });
         }
       }
     } catch (e) {
@@ -308,6 +331,7 @@ export function usePlayer() {
         // Stop and unload previous audio first
         await NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
         await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+        await new Promise(r => setTimeout(r, 50));
 
         // Preload new audio
         await NativeAudio.preload({
@@ -464,21 +488,34 @@ export function usePlayer() {
   }, [handleNext, handlePrev, pause]);
 
   const seekTo = useCallback(async (time: number) => {
-    if (isNative) {
-      try {
-        // Clamp time to valid range
-        const safeTime = Math.max(0, Math.min(time, duration - 0.5));
+    if (!duration || duration <= 0) {
+      debugLogger.warn('[Player] seek失败: duration无效');
+      return;
+    }
+
+    const safeTime = Math.max(0, Math.min(time, Math.max(0, duration - 2)));
+    debugLogger.log(`[Player] seekTo: ${time.toFixed(2)}s -> ${safeTime.toFixed(2)}s (duration: ${duration.toFixed(2)}s)`);
+
+    isSeekingRef.current = true;
+
+    try {
+      if (isNative) {
         await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time: safeTime });
         setProgress(safeTime);
-      } catch (e) {
-        debugLogger.error(`[Player] seek 失败: ${e instanceof Error ? e.message : String(e)}`);
+      } else {
+        const audio = audioRef.current;
+        if (audio) {
+          audio.currentTime = safeTime;
+          setProgress(safeTime);
+        }
       }
-    } else {
-      const audio = audioRef.current;
-      if (audio) {
-        audio.currentTime = time;
-        setProgress(time);
-      }
+    } catch (e) {
+      debugLogger.error(`[Player] seek 失败: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTimeout(() => {
+        isSeekingRef.current = false;
+        debugLogger.log('[Player] seek完成，解除complete事件屏蔽');
+      }, 500);
     }
   }, [duration]);
 
@@ -708,16 +745,38 @@ export function usePlayer() {
 
   // 播放已下载的文件
   const playDownloaded = useCallback(async (song: Song) => {
+    if (isPlayLockedRef.current) {
+      debugLogger.log(`[Player] 播放被锁定，忽略下载播放: ${song.title}`);
+      return;
+    }
+
+    // Same song resume
+    if (currentSongIdRef.current === song.id && currentSong) {
+      debugLogger.log(`[Player] 同一首下载歌曲，恢复播放: ${song.title}`);
+      if (isNative) {
+        await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+      } else {
+        audioRef.current?.play().catch(() => {});
+      }
+      setIsPlaying(true);
+      return;
+    }
+
+    isPlayLockedRef.current = true;
+    currentSongIdRef.current = song.id;
+
     const localUrl = await readDownloadedFile(song);
     if (localUrl) {
       setCurrentSong(song);
-      setIsPlaying(true);
+      setIsPlaying(false);
       setProgress(0);
+      setDuration(0);
 
       if (isNative) {
         try {
           await NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
           await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+          await new Promise(r => setTimeout(r, 50));
           await NativeAudio.preload({
             assetId: AUDIO_ASSET_ID,
             assetPath: localUrl,
@@ -732,21 +791,34 @@ export function usePlayer() {
           });
           const dur = await NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID });
           setDuration(dur.duration);
+
+          if (currentSongIdRef.current !== song.id) {
+            await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+            isPlayLockedRef.current = false;
+            return;
+          }
+
           await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
+          setIsPlaying(true);
         } catch (e) {
-          debugLogger.error(`[Player] Failed to play downloaded file: ${e instanceof Error ? e.message : String(e)}`);
+          debugLogger.error(`[Player] 播放下载文件失败: ${e instanceof Error ? e.message : String(e)}`);
           setIsPlaying(false);
+        } finally {
+          isPlayLockedRef.current = false;
         }
       } else {
         const audio = audioRef.current;
         if (audio) {
           audio.src = localUrl;
           audio.volume = isMuted ? 0 : volume;
-          audio.play().catch(() => setIsPlaying(false));
+          audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
         }
+        isPlayLockedRef.current = false;
       }
+    } else {
+      isPlayLockedRef.current = false;
     }
-  }, [volume, isMuted]);
+  }, [volume, isMuted, currentSong]);
 
   const isDownloaded = useCallback((songId: string) => downloads.has(songId), [downloads]);
 
