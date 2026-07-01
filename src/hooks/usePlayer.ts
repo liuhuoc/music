@@ -14,7 +14,9 @@ import type { DownloadProgress } from '../services/downloadService';
 
 type PlayMode = 'loop' | 'single' | 'shuffle';
 
-const AUDIO_ASSET_ID = 'music_player_current';
+let assetIdCounter = 0;
+const generateAssetId = () => `music_player_${Date.now()}_${++assetIdCounter}`;
+
 const isNative = Capacitor.isNativePlatform();
 
 export interface DownloadItem {
@@ -58,6 +60,9 @@ export function usePlayer() {
   const currentSongIdRef = useRef<string | null>(null);
   const isSeekingRef = useRef(false);
   const isRestoringRef = useRef(false);
+  const currentAssetIdRef = useRef<string>('');
+  const progressRef = useRef(0);
+  const durationRef = useRef(0);
 
   // Initialize native audio
   useEffect(() => {
@@ -74,36 +79,49 @@ export function usePlayer() {
 
       // Listen for playback completion
       NativeAudio.addListener('complete', (event) => {
-        if (event.assetId === AUDIO_ASSET_ID) {
-          if (isSeekingRef.current) {
-            debugLogger.log('[Player] seek期间忽略complete事件');
-            return;
-          }
-          handleNextRef.current();
+        if (event.assetId !== currentAssetIdRef.current) {
+          debugLogger.log(`[Player] 忽略旧asset的complete事件: ${event.assetId}`);
+          return;
         }
+        if (isSeekingRef.current) {
+          debugLogger.log('[Player] seek期间忽略complete事件');
+          return;
+        }
+        const timeLeft = durationRef.current - progressRef.current;
+        if (timeLeft > 5) {
+          debugLogger.warn(`[Player] 异常complete事件: 剩余${timeLeft.toFixed(1)}s，忽略`);
+          return;
+        }
+        debugLogger.log('[Player] 播放完成，切换下一首');
+        handleNextRef.current();
       }).then(l => listenersRef.current.push(l));
 
       // Listen for current time updates (100ms)
       NativeAudio.addListener('currentTime', (event) => {
-        if (event.assetId === AUDIO_ASSET_ID) {
+        if (event.assetId === currentAssetIdRef.current) {
           setProgress(event.currentTime);
+          progressRef.current = event.currentTime;
         }
       }).then(l => listenersRef.current.push(l));
 
       // Listen for playback state changes (lock screen controls)
       NativeAudio.addListener('playbackState', (event) => {
-        if (event.assetId === AUDIO_ASSET_ID) {
+        if (event.assetId === currentAssetIdRef.current) {
           setIsPlaying(event.isPlaying);
           if (event.currentTime !== undefined) {
             setProgress(event.currentTime);
+            progressRef.current = event.currentTime;
           }
           if (event.duration !== undefined) {
             setDuration(event.duration);
+            durationRef.current = event.duration;
           }
           // Handle remote controls
           if (event.reason === 'remoteNext') {
+            debugLogger.log('[Player] 远程控制: 下一首');
             handleNextRef.current();
           } else if (event.reason === 'remotePrevious') {
+            debugLogger.log('[Player] 远程控制: 上一首');
             handlePrevRef.current();
           }
         }
@@ -113,11 +131,22 @@ export function usePlayer() {
       const audio = new Audio();
       audioRef.current = audio;
 
-      const onTimeUpdate = () => setProgress(audio.currentTime);
-      const onLoadedMetadata = () => setDuration(audio.duration || 0);
+      const onTimeUpdate = () => {
+        setProgress(audio.currentTime);
+        progressRef.current = audio.currentTime;
+      };
+      const onLoadedMetadata = () => {
+        setDuration(audio.duration || 0);
+        durationRef.current = audio.duration || 0;
+      };
       const onEnded = () => {
         if (isSeekingRef.current) {
           debugLogger.log('[Player] seek期间忽略ended事件');
+          return;
+        }
+        const timeLeft = durationRef.current - progressRef.current;
+        if (timeLeft > 5) {
+          debugLogger.warn(`[Player] 异常ended事件: 剩余${timeLeft.toFixed(1)}s，忽略`);
           return;
         }
         handleNextRef.current();
@@ -193,19 +222,24 @@ export function usePlayer() {
         // Check if native audio is actually playing
         if (isNative && state.currentSong) {
           isRestoringRef.current = true;
+          // Try the old static ID first (for backward compatibility)
+          const legacyAssetId = 'music_player_current';
           Promise.all([
-            NativeAudio.isPlaying({ assetId: AUDIO_ASSET_ID }).catch(() => ({ isPlaying: false })),
-            NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID }).catch(() => ({ duration: 0 })),
-            NativeAudio.getCurrentTime({ assetId: AUDIO_ASSET_ID }).catch(() => ({ currentTime: 0 })),
+            NativeAudio.isPlaying({ assetId: legacyAssetId }).catch(() => ({ isPlaying: false })),
+            NativeAudio.getDuration({ assetId: legacyAssetId }).catch(() => ({ duration: 0 })),
+            NativeAudio.getCurrentTime({ assetId: legacyAssetId }).catch(() => ({ currentTime: 0 })),
           ]).then(([playResult, durResult, timeResult]) => {
             if (playResult.isPlaying) {
-              debugLogger.log('[Player] 检测到原生音频正在播放，同步状态');
+              debugLogger.log('[Player] 检测到原生音频正在播放，使用旧assetId同步状态');
+              currentAssetIdRef.current = legacyAssetId;
               setIsPlaying(true);
               if (durResult.duration > 0) {
                 setDuration(durResult.duration);
+                durationRef.current = durResult.duration;
               }
               if (timeResult.currentTime !== undefined) {
                 setProgress(timeResult.currentTime);
+                progressRef.current = timeResult.currentTime;
               }
             } else {
               debugLogger.log('[Player] 原生音频未播放，保持暂停状态');
@@ -262,10 +296,10 @@ export function usePlayer() {
     }
 
     // If same song is already loaded and not forcing restart, just resume
-    if (currentSongIdRef.current === song.id && currentSong && !forceRestart) {
+    if (currentSongIdRef.current === song.id && currentSong && !forceRestart && currentAssetIdRef.current) {
       debugLogger.log(`[Player] 同一首歌，恢复播放: ${song.title}`);
       if (isNative) {
-        await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+        await NativeAudio.play({ assetId: currentAssetIdRef.current }).catch(() => {});
       } else {
         audioRef.current?.play().catch(() => {});
       }
@@ -276,13 +310,20 @@ export function usePlayer() {
     isPlayLockedRef.current = true;
     currentSongIdRef.current = song.id;
 
-    debugLogger.log(`[Player] 播放: ${song.title} - ${song.artist} (source: ${song.source}, id: ${song.id})`);
+    // Generate new asset ID for each new song to avoid stale state issues
+    const newAssetId = generateAssetId();
+    const oldAssetId = currentAssetIdRef.current;
+    currentAssetIdRef.current = newAssetId;
+
+    debugLogger.log(`[Player] 播放: ${song.title} - ${song.artist} (source: ${song.source}, id: ${song.id}, asset: ${newAssetId})`);
 
     // Set initial UI state immediately
     setCurrentSong(song);
-    setIsPlaying(false); // Will set to true after actual playback starts
+    setIsPlaying(false);
     setProgress(0);
     setDuration(0);
+    progressRef.current = 0;
+    durationRef.current = 0;
 
     if (songQueue) {
       setQueue(songQueue);
@@ -313,12 +354,12 @@ export function usePlayer() {
         debugLogger.error(`[Player] 无法获取播放URL: ${song.title}`);
         setIsPlaying(false);
         isPlayLockedRef.current = false;
-        // Don't reset currentSongIdRef so user sees failed song in UI
+        currentAssetIdRef.current = oldAssetId;
         return;
       }
 
       // Check if user already switched to another song during URL fetch
-      if (currentSongIdRef.current !== song.id) {
+      if (currentSongIdRef.current !== song.id || currentAssetIdRef.current !== newAssetId) {
         debugLogger.log(`[Player] 用户已切换歌曲，取消播放: ${song.title}`);
         isPlayLockedRef.current = false;
         return;
@@ -328,14 +369,19 @@ export function usePlayer() {
       currentUrlRef.current = url;
 
       if (isNative) {
-        // Stop and unload previous audio first
-        await NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-        await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-        await new Promise(r => setTimeout(r, 50));
+        // Stop and unload previous audio first (with old asset ID)
+        if (oldAssetId) {
+          NativeAudio.stop({ assetId: oldAssetId }).catch(() => {});
+          NativeAudio.unload({ assetId: oldAssetId }).catch(() => {});
+        }
+        // Also try to clean up any leftover with the old static ID
+        NativeAudio.stop({ assetId: 'music_player_current' }).catch(() => {});
+        NativeAudio.unload({ assetId: 'music_player_current' }).catch(() => {});
+        await new Promise(r => setTimeout(r, 100));
 
-        // Preload new audio
+        // Preload new audio with new asset ID
         await NativeAudio.preload({
-          assetId: AUDIO_ASSET_ID,
+          assetId: newAssetId,
           assetPath: url,
           isUrl: true,
           volume: isMuted ? 0 : volume,
@@ -348,19 +394,20 @@ export function usePlayer() {
         });
 
         // Get duration
-        const dur = await NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID });
+        const dur = await NativeAudio.getDuration({ assetId: newAssetId });
         setDuration(dur.duration);
+        durationRef.current = dur.duration;
 
         // Double-check we're still playing this song
-        if (currentSongIdRef.current !== song.id) {
+        if (currentSongIdRef.current !== song.id || currentAssetIdRef.current !== newAssetId) {
           debugLogger.log(`[Player] 歌曲已切换，取消播放: ${song.title}`);
-          await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+          NativeAudio.unload({ assetId: newAssetId }).catch(() => {});
           isPlayLockedRef.current = false;
           return;
         }
 
         // Start playback
-        await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
+        await NativeAudio.play({ assetId: newAssetId });
         setIsPlaying(true);
       } else {
         // Web fallback
@@ -394,12 +441,13 @@ export function usePlayer() {
     if (!currentSong) return;
 
     if (isNative) {
+      if (!currentAssetIdRef.current) return;
       try {
         if (isPlaying) {
-          await NativeAudio.pause({ assetId: AUDIO_ASSET_ID });
+          await NativeAudio.pause({ assetId: currentAssetIdRef.current });
           setIsPlaying(false);
         } else {
-          await NativeAudio.resume({ assetId: AUDIO_ASSET_ID });
+          await NativeAudio.resume({ assetId: currentAssetIdRef.current });
           setIsPlaying(true);
         }
       } catch {
@@ -420,9 +468,11 @@ export function usePlayer() {
 
   const pause = useCallback(async () => {
     if (isNative) {
-      try {
-        await NativeAudio.pause({ assetId: AUDIO_ASSET_ID });
-      } catch {}
+      if (currentAssetIdRef.current) {
+        try {
+          await NativeAudio.pause({ assetId: currentAssetIdRef.current });
+        } catch {}
+      }
     } else {
       const audio = audioRef.current;
       if (audio) audio.pause();
@@ -454,15 +504,16 @@ export function usePlayer() {
     if (queue.length === 0 || !currentSong) return;
 
     if (progress < 3) {
-      if (isNative) {
+      if (isNative && currentAssetIdRef.current) {
         try {
-          await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time: 0 });
+          await NativeAudio.setCurrentTime({ assetId: currentAssetIdRef.current, time: 0 });
         } catch {}
       } else {
         const audio = audioRef.current;
         if (audio) audio.currentTime = 0;
       }
       setProgress(0);
+      progressRef.current = 0;
       return;
     }
 
@@ -488,25 +539,28 @@ export function usePlayer() {
   }, [handleNext, handlePrev, pause]);
 
   const seekTo = useCallback(async (time: number) => {
-    if (!duration || duration <= 0) {
+    if (!durationRef.current || durationRef.current <= 0) {
       debugLogger.warn('[Player] seek失败: duration无效');
       return;
     }
+    if (isNative && !currentAssetIdRef.current) return;
 
-    const safeTime = Math.max(0, Math.min(time, Math.max(0, duration - 2)));
-    debugLogger.log(`[Player] seekTo: ${time.toFixed(2)}s -> ${safeTime.toFixed(2)}s (duration: ${duration.toFixed(2)}s)`);
+    const safeTime = Math.max(0, Math.min(time, Math.max(0, durationRef.current - 2)));
+    debugLogger.log(`[Player] seekTo: ${time.toFixed(2)}s -> ${safeTime.toFixed(2)}s (duration: ${durationRef.current.toFixed(2)}s)`);
 
     isSeekingRef.current = true;
 
     try {
       if (isNative) {
-        await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time: safeTime });
+        await NativeAudio.setCurrentTime({ assetId: currentAssetIdRef.current, time: safeTime });
         setProgress(safeTime);
+        progressRef.current = safeTime;
       } else {
         const audio = audioRef.current;
         if (audio) {
           audio.currentTime = safeTime;
           setProgress(safeTime);
+          progressRef.current = safeTime;
         }
       }
     } catch (e) {
@@ -515,9 +569,9 @@ export function usePlayer() {
       setTimeout(() => {
         isSeekingRef.current = false;
         debugLogger.log('[Player] seek完成，解除complete事件屏蔽');
-      }, 500);
+      }, 1000);
     }
-  }, [duration]);
+  }, []);
 
   const toggleFavorite = useCallback((songId: string) => {
     setFavorites(prev => {
@@ -743,82 +797,11 @@ export function usePlayer() {
     });
   }, [downloadList]);
 
-  // 播放已下载的文件
+  // 播放已下载的文件 - 委托给 play 函数
   const playDownloaded = useCallback(async (song: Song) => {
-    if (isPlayLockedRef.current) {
-      debugLogger.log(`[Player] 播放被锁定，忽略下载播放: ${song.title}`);
-      return;
-    }
-
-    // Same song resume
-    if (currentSongIdRef.current === song.id && currentSong) {
-      debugLogger.log(`[Player] 同一首下载歌曲，恢复播放: ${song.title}`);
-      if (isNative) {
-        await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-      } else {
-        audioRef.current?.play().catch(() => {});
-      }
-      setIsPlaying(true);
-      return;
-    }
-
-    isPlayLockedRef.current = true;
-    currentSongIdRef.current = song.id;
-
-    const localUrl = await readDownloadedFile(song);
-    if (localUrl) {
-      setCurrentSong(song);
-      setIsPlaying(false);
-      setProgress(0);
-      setDuration(0);
-
-      if (isNative) {
-        try {
-          await NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-          await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-          await new Promise(r => setTimeout(r, 50));
-          await NativeAudio.preload({
-            assetId: AUDIO_ASSET_ID,
-            assetPath: localUrl,
-            isUrl: true,
-            volume: isMuted ? 0 : volume,
-            notificationMetadata: {
-              title: song.title,
-              artist: song.artist,
-              album: song.album,
-              artworkUrl: song.cover,
-            },
-          });
-          const dur = await NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID });
-          setDuration(dur.duration);
-
-          if (currentSongIdRef.current !== song.id) {
-            await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-            isPlayLockedRef.current = false;
-            return;
-          }
-
-          await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
-          setIsPlaying(true);
-        } catch (e) {
-          debugLogger.error(`[Player] 播放下载文件失败: ${e instanceof Error ? e.message : String(e)}`);
-          setIsPlaying(false);
-        } finally {
-          isPlayLockedRef.current = false;
-        }
-      } else {
-        const audio = audioRef.current;
-        if (audio) {
-          audio.src = localUrl;
-          audio.volume = isMuted ? 0 : volume;
-          audio.play().then(() => setIsPlaying(true)).catch(() => setIsPlaying(false));
-        }
-        isPlayLockedRef.current = false;
-      }
-    } else {
-      isPlayLockedRef.current = false;
-    }
-  }, [volume, isMuted, currentSong]);
+    // 直接调用 play 函数，它会检查下载缓存
+    play(song);
+  }, [play]);
 
   const isDownloaded = useCallback((songId: string) => downloads.has(songId), [downloads]);
 

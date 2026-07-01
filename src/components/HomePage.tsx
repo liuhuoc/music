@@ -18,58 +18,75 @@ interface HomePageProps {
   currentSong: Song | null;
   isPlaying: boolean;
   onPlay: (song: Song, queue?: Song[]) => void;
+  onTogglePlay: () => void;
   downloadCount: number;
 }
 
-export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadCount }: HomePageProps) {
+export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, onTogglePlay, downloadCount }: HomePageProps) {
   const [activeTab, setActiveTab] = useState('hot');
   const [toplistSongs, setToplistSongs] = useState<Song[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
+  const [cacheTime, setCacheTime] = useState<Record<string, number>>({});
 
-  // Load real toplist data on mount and tab change
-  useEffect(() => {
-    const loadToplist = async () => {
-      setIsLoading(true);
-      setUsingFallback(false);
-      debugLogger.log(`[HomePage] 开始加载排行榜, tab: ${activeTab}`);
-      try {
-        const toplistMap: Record<string, number> = {
-          hot: 3778678,    // 热歌榜
-          rising: 19723756, // 飙升榜
-          new: 3779629,    // 新歌榜
-        };
-        const toplistId = toplistMap[activeTab];
-        debugLogger.log(`[HomePage] 排行榜 ID: ${toplistId}`);
-        if (!toplistId) {
-          setToplistSongs([]);
-          return;
-        }
+  const CACHE_DURATION = 5 * 60 * 1000;
 
-        const startTime = Date.now();
-        const neteaseSongs = await getToplistDetail(toplistId);
-        const elapsed = Date.now() - startTime;
-        debugLogger.log(`[HomePage] API 返回: ${neteaseSongs.length} 首歌曲, 耗时: ${elapsed} ms`);
+  const loadToplist = async (bypassCache = false) => {
+    const cacheKey = activeTab;
+    const now = Date.now();
 
-        const songs = neteaseSongs.slice(0, 50).map(convertToAppSong);
-        setToplistSongs(songs);
-        if (songs.length === 0) {
-          debugLogger.log(`[HomePage] 排行榜返回空`);
-          setUsingFallback(true);
-        }
-      } catch (err) {
-        debugLogger.error(`[HomePage] 加载失败: ${err instanceof Error ? err.message : String(err)}`);
+    if (!bypassCache && cacheTime[cacheKey] && now - cacheTime[cacheKey] < CACHE_DURATION && toplistSongs.length > 0) {
+      debugLogger.log(`[HomePage] 使用缓存数据, tab: ${activeTab}`);
+      return;
+    }
+
+    setIsLoading(true);
+    setUsingFallback(false);
+    debugLogger.log(`[HomePage] 开始加载排行榜, tab: ${activeTab}`);
+    try {
+      const toplistMap: Record<string, number> = {
+        hot: 3778678,
+        rising: 19723756,
+        new: 3779629,
+      };
+      const toplistId = toplistMap[activeTab];
+      if (!toplistId) {
         setToplistSongs([]);
-        setUsingFallback(true);
-      } finally {
-        setIsLoading(false);
+        return;
       }
-    };
 
+      const startTime = Date.now();
+      const neteaseSongs = await getToplistDetail(toplistId);
+      const elapsed = Date.now() - startTime;
+      debugLogger.log(`[HomePage] API 返回: ${neteaseSongs.length} 首歌曲, 耗时: ${elapsed} ms`);
+
+      const songs = neteaseSongs.slice(0, 50).map(convertToAppSong);
+      setToplistSongs(songs);
+      setCacheTime(prev => ({ ...prev, [cacheKey]: Date.now() }));
+
+      if (songs.length === 0) {
+        debugLogger.log(`[HomePage] 排行榜返回空`);
+        setUsingFallback(true);
+      }
+    } catch (err) {
+      debugLogger.error(`[HomePage] 加载失败: ${err instanceof Error ? err.message : String(err)}`);
+      setToplistSongs([]);
+      setUsingFallback(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadToplist();
   }, [activeTab]);
 
-  const handlePlay = (song: Song, songs?: Song[]) => {
+  const handleSongClick = (song: Song, songs?: Song[]) => {
+    const isCurrentSong = currentSong?.id === song.id;
+    if (isCurrentSong) {
+      onTogglePlay();
+      return;
+    }
     const queue = songs && songs.length > 0 ? songs : toplistSongs.length > 0 ? toplistSongs : [song];
     onPlay(song, queue);
   };
@@ -285,7 +302,7 @@ export function HomePage({ onNavigate, currentSong, isPlaying, onPlay, downloadC
               return (
                 <div
                   key={song.id}
-                  onClick={() => handlePlay(song)}
+                  onClick={() => handleSongClick(song)}
                   style={{
                     display: 'flex',
                     alignItems: 'center',

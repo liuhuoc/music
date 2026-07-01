@@ -336,6 +336,7 @@ export default function App() {
               currentSong={player.currentSong}
               isPlaying={player.isPlaying}
               onPlay={handlePlay}
+              onTogglePlay={player.togglePlay}
               downloadCount={player.downloadList.filter(d => d.status === 'completed').length}
             />
           )}
@@ -343,6 +344,8 @@ export default function App() {
             <SearchPage
               onNavigate={handleNavigate}
               onPlay={handlePlay}
+              onTogglePlay={player.togglePlay}
+              currentSong={player.currentSong}
             />
           )}
         </div>

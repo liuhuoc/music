@@ -26,9 +26,12 @@ const defaultHotSearches = [
 interface SearchPageProps {
   onNavigate: (page: string, data?: unknown) => void;
   onPlay: (song: Song, queue?: Song[]) => void;
+  onTogglePlay?: () => void;
+  currentSong?: Song | null;
+  isPlaying?: boolean;
 }
 
-export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
+export function SearchPage({ onNavigate, onPlay, onTogglePlay, currentSong }: SearchPageProps) {
   const [activeTab, setActiveTab] = useState<'hot' | 'history'>('hot');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -415,27 +418,36 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                 </button>
               </div>
             ) : results.length > 0 ? (
-              results.map((song, i) => (
+              results.map((song, i) => {
+                const isCurrent = currentSong?.id === song.id;
+                return (
                 <div
                   key={song.id}
-                  onClick={() => onPlay(song, results)}
+                  onClick={() => {
+                    if (isCurrent && onTogglePlay) {
+                      onTogglePlay();
+                    } else {
+                      onPlay(song, results);
+                    }
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
                     padding: '10px 14px',
                     borderRadius: 'var(--radius-md)',
-                    background: 'var(--surface)',
+                    background: isCurrent ? 'var(--mint-light)' : 'var(--surface)',
+                    border: isCurrent ? '1.5px solid var(--mint)' : '1px solid transparent',
                     cursor: 'pointer',
                     transition: 'var(--transition)',
                     animation: `slideUp 0.3s ease ${i * 0.05}s both`,
                   }}
                   onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
+                    (e.currentTarget as HTMLElement).style.background = isCurrent ? 'var(--mint-light)' : 'var(--surface-hover)';
                     (e.currentTarget as HTMLElement).style.transform = 'translateX(4px)';
                   }}
                   onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--surface)';
+                    (e.currentTarget as HTMLElement).style.background = isCurrent ? 'var(--mint-light)' : 'var(--surface)';
                     (e.currentTarget as HTMLElement).style.transform = 'translateX(0)';
                   }}
                 >
@@ -485,7 +497,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                     <IconMore size={18} color="var(--text-tertiary)" />
                   </button>
                 </div>
-              ))
+              )})
             ) : (
               <div style={{
                 textAlign: 'center',
