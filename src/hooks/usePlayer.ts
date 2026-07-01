@@ -164,6 +164,55 @@ export function usePlayer() {
     }
   }, [downloadList]);
 
+  // Restore playback state from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedState = localStorage.getItem('music_player_state');
+      if (savedState) {
+        const state = JSON.parse(savedState);
+        if (state.currentSong) {
+          setCurrentSong(state.currentSong);
+          currentSongIdRef.current = state.currentSong.id;
+        }
+        if (state.queue) setQueue(state.queue);
+        if (state.queueIndex !== undefined) setQueueIndex(state.queueIndex);
+        if (state.playMode) setPlayMode(state.playMode);
+        debugLogger.log('[Player] 已从本地存储恢复播放状态');
+
+        // Check if native audio is actually playing
+        if (isNative && state.currentSong) {
+          NativeAudio.isPlaying({ assetId: AUDIO_ASSET_ID })
+            .then(result => {
+              if (result.isPlaying) {
+                setIsPlaying(true);
+                NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID })
+                  .then(d => setDuration(d.duration))
+                  .catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    } catch (e) {
+      debugLogger.error(`[Player] 恢复播放状态失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, []);
+
+  // Persist playback state to localStorage
+  useEffect(() => {
+    try {
+      const state = {
+        currentSong,
+        queue,
+        queueIndex,
+        playMode,
+      };
+      localStorage.setItem('music_player_state', JSON.stringify(state));
+    } catch (e) {
+      debugLogger.error(`[Player] 保存播放状态失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [currentSong, queue, queueIndex, playMode]);
+
   // Timer countdown
   useEffect(() => {
     if (timerActive && timerEndTime) {
@@ -417,12 +466,10 @@ export function usePlayer() {
   const seekTo = useCallback(async (time: number) => {
     if (isNative) {
       try {
-        await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time });
-        setProgress(time);
-        // Ensure playback continues after seek (some audio engines pause on seek)
-        if (isPlaying) {
-          await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
-        }
+        // Clamp time to valid range
+        const safeTime = Math.max(0, Math.min(time, duration - 0.5));
+        await NativeAudio.setCurrentTime({ assetId: AUDIO_ASSET_ID, time: safeTime });
+        setProgress(safeTime);
       } catch (e) {
         debugLogger.error(`[Player] seek 失败: ${e instanceof Error ? e.message : String(e)}`);
       }
@@ -433,7 +480,7 @@ export function usePlayer() {
         setProgress(time);
       }
     }
-  }, [isPlaying]);
+  }, [duration]);
 
   const toggleFavorite = useCallback((songId: string) => {
     setFavorites(prev => {

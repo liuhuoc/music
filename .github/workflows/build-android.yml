@@ -109,7 +109,7 @@ jobs:
           retention-days: 90
 
       # Auto-create GitHub Release on tag push
-      - name: Create GitHub Release (tag)
+      - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -118,25 +118,6 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
           generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Auto-update "latest" release on push to main
-      - name: Update Latest Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Latest Build
-          body: |
-            最新自动构建版本
-            提交: ${{ github.sha }}
-            构建时间: ${{ github.event.head_commit.timestamp || 'N/A' }}
-          files: |
-            android/app/build/outputs/apk/release/app-release.apk
-          draft: false
-          prerelease: true
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
