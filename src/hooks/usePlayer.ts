@@ -54,6 +54,8 @@ export function usePlayer() {
   const handleNextRef = useRef<() => void>(() => {});
   const handlePrevRef = useRef<() => void | Promise<void>>(() => {});
   const pauseRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const isPlayLockedRef = useRef(false);
+  const currentSongIdRef = useRef<string | null>(null);
 
   // Initialize native audio
   useEffect(() => {
@@ -64,6 +66,10 @@ export function usePlayer() {
         showNotification: true,
         backgroundPlayback: true,
       }).catch(() => {});
+
+      // Stop any leftover audio from previous page loads
+      NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+      NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
 
       // Listen for playback completion
       NativeAudio.addListener('complete', (event) => {
@@ -151,45 +157,85 @@ export function usePlayer() {
     };
   }, [timerActive, timerEndTime]);
 
-  const play = useCallback(async (song: Song, songQueue?: Song[]) => {
-    debugLogger.log(`[Player] 播放: ${song.title} - ${song.artist} (source: ${song.source}, id: ${song.id})`);
-    setCurrentSong(song);
-    setIsPlaying(true);
-    setProgress(0);
-
-    let url: string;
-
-    // Check if song is downloaded locally
-    const downloadedItem = downloadList.find(d => d.song.id === song.id && d.status === 'completed');
-    if (downloadedItem?.filePath) {
-      // Play local file - on Android, read the actual file into a blob URL
-      if (isNative) {
-        const blobUrl = await readDownloadedFile(song);
-        url = blobUrl || downloadedItem.filePath;
-      } else {
-        url = downloadedItem.filePath;
-      }
-    } else {
-      // Try to get real play URL from Netease API
-      let playUrl: string | null = null;
-      try {
-        playUrl = await getPlayUrlWithRetry(song, 2);
-      } catch {
-        playUrl = null;
-      }
-      url = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
+  const play = useCallback(async (song: Song, songQueue?: Song[], forceRestart = false) => {
+    // Prevent reentrant play calls
+    if (isPlayLockedRef.current) {
+      debugLogger.log(`[Player] 播放被锁定，忽略: ${song.title}`);
+      return;
     }
 
-    debugLogger.log(`[Player] 播放URL: ${url.substring(0, 80)}...`);
-    currentUrlRef.current = url;
+    // If same song is already loaded and not forcing restart, just resume
+    if (currentSongIdRef.current === song.id && currentSong && !forceRestart) {
+      debugLogger.log(`[Player] 同一首歌，恢复播放: ${song.title}`);
+      if (isNative) {
+        await NativeAudio.play({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+      } else {
+        audioRef.current?.play().catch(() => {});
+      }
+      setIsPlaying(true);
+      return;
+    }
 
-    if (isNative) {
-      try {
-        // Stop and unload previous
+    isPlayLockedRef.current = true;
+    currentSongIdRef.current = song.id;
+
+    debugLogger.log(`[Player] 播放: ${song.title} - ${song.artist} (source: ${song.source}, id: ${song.id})`);
+
+    // Set initial UI state immediately
+    setCurrentSong(song);
+    setIsPlaying(false); // Will set to true after actual playback starts
+    setProgress(0);
+    setDuration(0);
+
+    if (songQueue) {
+      setQueue(songQueue);
+      const idx = songQueue.findIndex(s => s.id === song.id);
+      setQueueIndex(idx >= 0 ? idx : 0);
+    }
+
+    try {
+      let url: string | null = null;
+
+      // Check if song is downloaded locally
+      const downloadedItem = downloadList.find(d => d.song.id === song.id && d.status === 'completed');
+      if (downloadedItem?.filePath) {
+        if (isNative) {
+          const blobUrl = await readDownloadedFile(song);
+          url = blobUrl || null;
+        } else {
+          url = downloadedItem.filePath;
+        }
+      }
+
+      // If no local file, get play URL from API
+      if (!url) {
+        url = await getPlayUrlWithRetry(song, 2);
+      }
+
+      if (!url) {
+        debugLogger.error(`[Player] 无法获取播放URL: ${song.title}`);
+        setIsPlaying(false);
+        isPlayLockedRef.current = false;
+        // Don't reset currentSongIdRef so user sees failed song in UI
+        return;
+      }
+
+      // Check if user already switched to another song during URL fetch
+      if (currentSongIdRef.current !== song.id) {
+        debugLogger.log(`[Player] 用户已切换歌曲，取消播放: ${song.title}`);
+        isPlayLockedRef.current = false;
+        return;
+      }
+
+      debugLogger.log(`[Player] 播放URL: ${url.substring(0, 80)}...`);
+      currentUrlRef.current = url;
+
+      if (isNative) {
+        // Stop and unload previous audio first
         await NativeAudio.stop({ assetId: AUDIO_ASSET_ID }).catch(() => {});
         await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
 
-        // Preload with metadata for notification center
+        // Preload new audio
         await NativeAudio.preload({
           assetId: AUDIO_ASSET_ID,
           assetPath: url,
@@ -207,84 +253,44 @@ export function usePlayer() {
         const dur = await NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID });
         setDuration(dur.duration);
 
-        // Play
+        // Double-check we're still playing this song
+        if (currentSongIdRef.current !== song.id) {
+          debugLogger.log(`[Player] 歌曲已切换，取消播放: ${song.title}`);
+          await NativeAudio.unload({ assetId: AUDIO_ASSET_ID }).catch(() => {});
+          isPlayLockedRef.current = false;
+          return;
+        }
+
+        // Start playback
         await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
-      } catch (e) {
-        debugLogger.error(`[Player] Native audio error: ${e instanceof Error ? e.message : String(e)}`);
-        // Fallback: try network URL if local file failed
-        if (downloadedItem?.filePath) {
-          let fallbackUrl = url;
-          try {
-            const playUrl = await getPlayUrlWithRetry(song, 1);
-            fallbackUrl = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-          } catch {
-            fallbackUrl = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-          }
-          try {
-            await NativeAudio.preload({
-              assetId: AUDIO_ASSET_ID,
-              assetPath: fallbackUrl,
-              isUrl: true,
-              volume: isMuted ? 0 : volume,
-              notificationMetadata: {
-                title: song.title,
-                artist: song.artist,
-                album: song.album,
-                artworkUrl: song.cover,
-              },
-            });
-            const dur = await NativeAudio.getDuration({ assetId: AUDIO_ASSET_ID });
-            setDuration(dur.duration);
-            await NativeAudio.play({ assetId: AUDIO_ASSET_ID });
-          } catch {
-            setIsPlaying(false);
-          }
-        } else {
-          setIsPlaying(false);
+        setIsPlaying(true);
+      } else {
+        // Web fallback
+        const audio = audioRef.current;
+        if (audio) {
+          audio.src = url;
+          audio.volume = isMuted ? 0 : volume;
+          await audio.play();
+          setIsPlaying(true);
         }
       }
-    } else {
-      // Web fallback
-      const audio = audioRef.current;
-      if (audio) {
-        audio.src = url;
-        audio.volume = isMuted ? 0 : volume;
-        audio.play().catch(() => {
-          // Fallback: try network URL if local file failed
-          if (downloadedItem?.filePath) {
-            getPlayUrlWithRetry(song, 1)
-              .then(playUrl => {
-                const fallbackUrl = playUrl || 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-                audio.src = fallbackUrl;
-                audio.play().catch(() => setIsPlaying(false));
-              })
-              .catch(() => {
-                audio.src = 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3';
-                audio.play().catch(() => setIsPlaying(false));
-              });
-          } else {
-            setIsPlaying(false);
-          }
-        });
-      }
-    }
 
-    // Fetch lyrics if not loaded yet
-    if (song.lyrics === '[00:00.00]歌词加载中...') {
-      try {
-        const lyric = await getLyric(song);
-        setCurrentSong(prev => prev && prev.id === song.id ? { ...prev, lyrics: lyric } : prev);
-      } catch {
-        // Keep default lyrics
+      // Fetch lyrics if not loaded yet
+      if (song.lyrics === '[00:00.00]歌词加载中...') {
+        try {
+          const lyric = await getLyric(song);
+          setCurrentSong(prev => prev && prev.id === song.id ? { ...prev, lyrics: lyric } : prev);
+        } catch {
+          // Keep default lyrics
+        }
       }
+    } catch (e) {
+      debugLogger.error(`[Player] 播放错误: ${e instanceof Error ? e.message : String(e)}`);
+      setIsPlaying(false);
+    } finally {
+      isPlayLockedRef.current = false;
     }
-
-    if (songQueue) {
-      setQueue(songQueue);
-      const idx = songQueue.findIndex(s => s.id === song.id);
-      setQueueIndex(idx >= 0 ? idx : 0);
-    }
-  }, [volume, isMuted, downloadList]);
+  }, [volume, isMuted, downloadList, currentSong]);
 
   const togglePlay = useCallback(async () => {
     if (!currentSong) return;
@@ -340,7 +346,8 @@ export function usePlayer() {
 
     const nextSong = queue[nextIndex];
     if (nextSong) {
-      play(nextSong);
+      const forceRestart = playMode === 'single';
+      play(nextSong, undefined, forceRestart);
       setQueueIndex(nextIndex);
     }
   }, [queue, queueIndex, playMode, currentSong, play]);

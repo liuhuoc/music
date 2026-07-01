@@ -5,6 +5,21 @@ import { Capacitor } from '@capacitor/core'
 import './index.css'
 import App from './App.tsx'
 
+// Prevent WebView back/forward navigation on native platforms
+// This avoids page reloads caused by swipe gestures on Android
+if (Capacitor.isNativePlatform()) {
+  // Replace current history state to prevent back navigation
+  if (window.history.length > 1) {
+    window.history.replaceState(null, '', window.location.href)
+  }
+
+  // Push a state and intercept popstate to block back navigation
+  window.history.pushState(null, '', window.location.href)
+  window.addEventListener('popstate', () => {
+    window.history.pushState(null, '', window.location.href)
+  })
+}
+
 function StatusBarInit() {
   useEffect(() => {
     if (Capacitor.isNativePlatform()) {
