@@ -51,6 +51,78 @@ interface NeteaseLyricResponse {
   lrc?: { lyric?: string };
 }
 
+// 评论接口响应
+interface NeteaseCommentUser {
+  nickname: string;
+  avatarUrl: string;
+}
+interface NeteaseCommentItem {
+  commentId: number;
+  content: string;
+  time: number;
+  likedCount: number;
+  user: NeteaseCommentUser;
+  ipLocation?: { location?: string };
+}
+interface NeteaseCommentResponse {
+  code: number;
+  hotComments?: NeteaseCommentItem[];
+  comments?: NeteaseCommentItem[];
+}
+
+export interface CommentItem {
+  id: string;
+  user: string;
+  avatar: string;
+  content: string;
+  date: string;
+  location: string;
+  likes: number;
+}
+
+function formatCommentTime(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+  if (diff < minute) return '刚刚';
+  if (diff < hour) return `${Math.floor(diff / minute)}分钟前`;
+  if (diff < day) return `${Math.floor(diff / hour)}小时前`;
+  if (diff < 30 * day) return `${Math.floor(diff / day)}天前`;
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+export async function getComments(songId: string, limit: number = 20): Promise<CommentItem[]> {
+  debugLogger.log(`[Netease] 获取评论: id=${songId}`);
+  try {
+    const data = await httpPost<NeteaseCommentResponse>(
+      `${API_BASE}/v1/resource/comments/R_SO_4_${songId}`,
+      { limit: String(limit), offset: '0' }
+    );
+    if (data.code !== 200) {
+      debugLogger.warn(`[Netease] 评论返回非200: code=${data.code}`);
+      return [];
+    }
+    const raw = data.hotComments && data.hotComments.length > 0
+      ? [...data.hotComments, ...(data.comments || []).slice(0, Math.max(0, limit - data.hotComments.length))]
+      : (data.comments || []);
+    return raw.slice(0, limit).map(c => ({
+      id: String(c.commentId),
+      user: c.user.nickname,
+      avatar: toHttps(c.user.avatarUrl),
+      content: c.content,
+      date: formatCommentTime(c.time),
+      location: c.ipLocation?.location || '未知',
+      likes: c.likedCount,
+    }));
+  } catch (e) {
+    debugLogger.error(`[Netease] 评论获取失败: ${e instanceof Error ? e.message : String(e)}`);
+    return [];
+  }
+}
+
 // 将网易云原始歌曲转换为应用内 Song 格式
 function convertToSong(raw: NeteaseRawSong): Song {
   const picUrl = raw.album?.picUrl ? toHttps(raw.album.picUrl) : '';

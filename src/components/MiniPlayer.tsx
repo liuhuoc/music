@@ -22,8 +22,9 @@ export function MiniPlayer({ song, isPlaying, progress, duration, onTogglePlay, 
   const progressRef = useRef<HTMLDivElement>(null);
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const progressPct = duration ? (progress / duration) * 100 : 0;
-  const displayPct = isDragging ? (dragValue / duration) * 100 : progressPct;
+  const progressPct = duration > 0 ? (progress / duration) * 100 : 0;
+  const displayPct = duration > 0 && isDragging ? (dragValue / duration) * 100 : progressPct;
+  const isSeekable = duration > 0;
 
   // Auto-expand when playing, keep expanded while song exists
   useEffect(() => {
@@ -32,7 +33,7 @@ export function MiniPlayer({ song, isPlaying, progress, duration, onTogglePlay, 
 
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
-    if (!progressRef.current || !duration) return;
+    if (!progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
@@ -41,18 +42,20 @@ export function MiniPlayer({ song, isPlaying, progress, duration, onTogglePlay, 
 
   const handleProgressMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation();
+    if (!isSeekable) return;
     startDrag(e.clientX);
   };
 
   const handleProgressTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     e.stopPropagation();
+    if (!isSeekable) return;
     const touch = e.touches[0];
     startDrag(touch.clientX);
   };
 
   const startDrag = (clientX: number) => {
     setIsDragging(true);
-    if (!progressRef.current || !duration) return;
+    if (!progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
@@ -83,7 +86,7 @@ export function MiniPlayer({ song, isPlaying, progress, duration, onTogglePlay, 
   }, [isDragging, dragValue, duration, onSeek]);
 
   const updateDrag = (clientX: number) => {
-    if (!progressRef.current || !duration) return;
+    if (!progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));

@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { IconChevronLeft, IconSearch, IconClock, IconMore, IconTrend } from './Icons';
 import { searchAndGetFullSongs, getHotSearch, PLATFORMS } from '../services/musicApi';
+import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
 
-// 平台显示名称和颜色
 const PLATFORM_LABELS: Record<string, string> = {
   netease: '网易云',
   kuwo: '酷我',
@@ -17,7 +17,6 @@ const PLATFORM_COLORS: Record<string, string> = {
   qq: '#31C27C',
 };
 
-// 默认热门搜索（API 不可用时使用）
 const defaultHotSearches = [
   '周杰伦', '林俊杰', '邓紫棋', '薛之谦', '陈奕迅',
   '毛不易', '周深', '华晨宇', 'Taylor Swift', 'Adele'
@@ -26,9 +25,12 @@ const defaultHotSearches = [
 interface SearchPageProps {
   onNavigate: (page: string, data?: unknown) => void;
   onPlay: (song: Song, queue?: Song[]) => void;
+  onTogglePlay: () => void;
+  currentSong: Song | null;
+  isPlaying: boolean;
 }
 
-export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
+export function SearchPage({ onNavigate, onPlay, onTogglePlay, currentSong, isPlaying }: SearchPageProps) {
   const [activeTab, setActiveTab] = useState<'hot' | 'history'>('hot');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchHistory, setSearchHistory] = useState<string[]>([]);
@@ -40,7 +42,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
   const [usingFallback, setUsingFallback] = useState(false);
   const [selectedPlatform, setSelectedPlatform] = useState<string>('all');
 
-  // 加载热门搜索和搜索历史
   useEffect(() => {
     const loadHotSearch = async () => {
       try {
@@ -54,7 +55,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
     };
     loadHotSearch();
 
-    // Load search history from localStorage
     try {
       const saved = localStorage.getItem('music_player_search_history');
       if (saved) {
@@ -65,7 +65,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
     }
   }, []);
 
-  // Persist search history to localStorage
   useEffect(() => {
     try {
       localStorage.setItem('music_player_search_history', JSON.stringify(searchHistory));
@@ -139,6 +138,15 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
   const clearHistory = () => {
     setSearchHistory([]);
   };
+
+  const handleSongClick = useCallback((song: Song) => {
+    if (currentSong?.id === song.id) {
+      debugLogger.log(`[SearchPage] 点击当前播放歌曲，切换播放状态`);
+      onTogglePlay();
+    } else {
+      onPlay(song, results);
+    }
+  }, [currentSong, results, onPlay, onTogglePlay]);
 
   const getRankColor = (rank: number) => {
     if (rank === 1) return 'linear-gradient(135deg, #EF4444, #F87171)';
@@ -293,7 +301,7 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
         </div>
       )}
 
-      {/* Platform Filter Tabs - shown when results are displayed */}
+      {/* Platform Filter Tabs */}
       {showResults && (
         <div style={{
           display: 'flex',
@@ -353,7 +361,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
         padding: '0 20px 20px',
       }}>
         {showResults ? (
-          /* Search Results */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {usingFallback && (
               <div style={{
@@ -415,77 +422,97 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
                 </button>
               </div>
             ) : results.length > 0 ? (
-              results.map((song, i) => (
-                <div
-                  key={song.id}
-                  onClick={() => onPlay(song, results)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '10px 14px',
-                    borderRadius: 'var(--radius-md)',
-                    background: 'var(--surface)',
-                    cursor: 'pointer',
-                    transition: 'var(--transition)',
-                    animation: `slideUp 0.3s ease ${i * 0.05}s both`,
-                  }}
-                  onMouseEnter={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--surface-hover)';
-                    (e.currentTarget as HTMLElement).style.transform = 'translateX(4px)';
-                  }}
-                  onMouseLeave={e => {
-                    (e.currentTarget as HTMLElement).style.background = 'var(--surface)';
-                    (e.currentTarget as HTMLElement).style.transform = 'translateX(0)';
-                  }}
-                >
-                  <img
-                    src={song.cover}
-                    alt={song.title}
+              results.map((song, i) => {
+                const isCurrent = currentSong?.id === song.id;
+                return (
+                  <div
+                    key={song.id}
+                    onClick={() => handleSongClick(song)}
                     style={{
-                      width: '48px',
-                      height: '48px',
-                      borderRadius: 'var(--radius-sm)',
-                      objectFit: 'cover',
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }} className="line-clamp-1">
-                      {song.title}
-                    </div>
-                    <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '2px' }} className="line-clamp-1">
-                      {song.artist}
-                    </div>
-                  </div>
-                  <span style={{
-                    fontSize: '10px',
-                    fontWeight: 600,
-                    color: '#fff',
-                    background: PLATFORM_COLORS[song.source] || 'var(--mint)',
-                    padding: '3px 8px',
-                    borderRadius: 'var(--radius-full)',
-                    flexShrink: 0,
-                  }}>
-                    {PLATFORM_LABELS[song.source] || song.source}
-                  </span>
-                  <button
-                    onClick={e => {
-                      e.stopPropagation();
-                      onNavigate('actionSheet', { song });
-                    }}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px',
+                      padding: '10px 14px',
+                      borderRadius: 'var(--radius-md)',
+                      background: isCurrent ? 'var(--mint-light)' : 'var(--surface)',
+                      border: isCurrent ? '1.5px solid var(--mint)' : '1px solid transparent',
                       cursor: 'pointer',
-                      borderRadius: '50%',
+                      transition: 'var(--transition)',
+                      animation: `slideUp 0.3s ease ${i * 0.05}s both`,
+                    }}
+                    onMouseEnter={e => {
+                      (e.currentTarget as HTMLElement).style.background = isCurrent ? 'var(--mint-light)' : 'var(--surface-hover)';
+                      (e.currentTarget as HTMLElement).style.transform = isCurrent ? 'none' : 'translateX(4px)';
+                    }}
+                    onMouseLeave={e => {
+                      (e.currentTarget as HTMLElement).style.background = isCurrent ? 'var(--mint-light)' : 'var(--surface)';
+                      (e.currentTarget as HTMLElement).style.transform = 'translateX(0)';
                     }}
                   >
-                    <IconMore size={18} color="var(--text-tertiary)" />
-                  </button>
-                </div>
-              ))
+                    <img
+                      src={song.cover}
+                      alt={song.title}
+                      style={{
+                        width: '48px',
+                        height: '48px',
+                        borderRadius: 'var(--radius-sm)',
+                        objectFit: 'cover',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        color: isCurrent ? 'var(--mint)' : 'var(--text-primary)',
+                      }} className="line-clamp-1">
+                        {song.title}
+                        {isCurrent && isPlaying && (
+                          <span style={{
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            color: 'var(--mint)',
+                            marginLeft: '6px',
+                          }}>▶ 播放中</span>
+                        )}
+                      </div>
+                      <div style={{
+                        fontSize: '13px',
+                        color: isCurrent ? 'var(--mint-dark)' : 'var(--text-secondary)',
+                        marginTop: '2px',
+                      }} className="line-clamp-1">
+                        {song.artist}
+                      </div>
+                    </div>
+                    <span style={{
+                      fontSize: '10px',
+                      fontWeight: 600,
+                      color: '#fff',
+                      background: PLATFORM_COLORS[song.source] || 'var(--mint)',
+                      padding: '3px 8px',
+                      borderRadius: 'var(--radius-full)',
+                      flexShrink: 0,
+                    }}>
+                      {PLATFORM_LABELS[song.source] || song.source}
+                    </span>
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        onNavigate('actionSheet', { song });
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        padding: '8px',
+                        cursor: 'pointer',
+                        borderRadius: '50%',
+                      }}
+                    >
+                      <IconMore size={18} color="var(--text-tertiary)" />
+                    </button>
+                  </div>
+                );
+              })
             ) : (
               <div style={{
                 textAlign: 'center',
@@ -499,7 +526,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
             )}
           </div>
         ) : activeTab === 'hot' ? (
-          /* Hot Searches */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
             {hotSearchList.map((title, i) => (
               <div
@@ -554,7 +580,6 @@ export function SearchPage({ onNavigate, onPlay }: SearchPageProps) {
             ))}
           </div>
         ) : (
-          /* Search History */
           <div>
             {searchHistory.length > 0 ? (
               <>

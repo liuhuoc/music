@@ -4,10 +4,13 @@ import { debugLogger } from '../utils/debugLogger';
 import type { Song } from '../data/songs';
 import type { PlatformAdapter, Platform } from './platforms/types';
 import { DEFAULT_LYRIC } from './platforms/types';
-import { neteaseAdapter, getHotSearch as neteaseGetHotSearch } from './platforms/netease';
+import { neteaseAdapter, getHotSearch as neteaseGetHotSearch, getComments as neteaseGetComments } from './platforms/netease';
+import type { CommentItem } from './platforms/netease';
 import { kuwoAdapter } from './platforms/kuwo';
 import { kugouAdapter } from './platforms/kugou';
 import { qqAdapter } from './platforms/qqmusic';
+
+export type { CommentItem };
 
 // 平台注册表：source -> 适配器
 const adapters: Record<string, PlatformAdapter> = {
@@ -221,4 +224,18 @@ export async function getHotSearch(): Promise<string[]> {
     debugLogger.warn(`[musicApi] 热搜获取失败: ${error instanceof Error ? error.message : String(error)}`);
   }
   return [];
+}
+
+// 获取歌曲评论
+export async function getComments(song: Song, limit: number = 20): Promise<CommentItem[]> {
+  debugLogger.log(`[musicApi] 获取评论: id=${song.id}, source=${song.source}`);
+  try {
+    if (song.source === 'netease') {
+      return await neteaseGetComments(song.id, limit);
+    }
+    return await neteaseGetComments(song.id, limit);
+  } catch (error) {
+    debugLogger.warn(`[musicApi] 评论获取失败: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  }
 }

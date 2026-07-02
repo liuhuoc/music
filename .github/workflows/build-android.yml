@@ -6,8 +6,6 @@ permissions:
 on:
   push:
     branches: [main, master]
-    tags:
-      - 'v*'
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -29,6 +27,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate version number
+        id: version
+        run: |
+          COMMIT_COUNT=$(git rev-list --count HEAD)
+          VERSION="1.0.${COMMIT_COUNT}"
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "tag=v${VERSION}" >> $GITHUB_OUTPUT
+          echo "versionCode=${COMMIT_COUNT}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -69,6 +78,12 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Update version in build.gradle
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ steps.version.outputs.versionCode }}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"${{ steps.version.outputs.version }}\"/" android/app/build.gradle
+
       # Debug Build (only when explicitly selected via manual trigger)
       - name: Build Debug APK
         if: github.event.inputs.build_type == 'debug'
@@ -80,7 +95,7 @@ jobs:
         if: github.event.inputs.build_type == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: music-player-debug
+          name: music-player-debug-v${{ steps.version.outputs.version }}
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
@@ -104,19 +119,21 @@ jobs:
         if: github.event.inputs.build_type != 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: music-player-release
+          name: music-player-release-v${{ steps.version.outputs.version }}
           path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 90
 
-      # Auto-create GitHub Release on tag push
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
+      # Auto-create GitHub Release on push to main
+      - name: Create GitHub Tag and Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.inputs.build_type != 'debug'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release v${{ steps.version.outputs.version }}
           files: |
             android/app/build/outputs/apk/release/app-release.apk
           draft: false
-          prerelease: ${{ contains(github.ref, '-alpha') || contains(github.ref, '-beta') || contains(github.ref, '-rc') }}
+          prerelease: false
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -198,7 +198,7 @@ export function DownloadPage({
                   <div
                     onClick={() => {
                       if (item.status !== 'completed') return;
-                      if (currentSong?.id === item.song.id && isPlaying) {
+                      if (currentSong?.id === item.song.id) {
                         onTogglePlay();
                       } else {
                         onPlay(item.song);

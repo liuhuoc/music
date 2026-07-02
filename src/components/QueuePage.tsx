@@ -9,11 +9,12 @@ interface QueuePageProps {
   queueIndex: number;
   onClose: () => void;
   onPlay: (song: Song) => void;
+  onTogglePlay: () => void;
   onRemoveFromQueue: (songId: string) => void;
   onNavigate: (page: string, data?: unknown) => void;
 }
 
-export function QueuePage({ queue, currentSong, isPlaying, queueIndex, onClose, onPlay, onRemoveFromQueue, onNavigate }: QueuePageProps) {
+export function QueuePage({ queue, currentSong, isPlaying, queueIndex, onClose, onPlay, onTogglePlay, onRemoveFromQueue, onNavigate }: QueuePageProps) {
   const [dragY, setDragY] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
@@ -278,7 +279,13 @@ export function QueuePage({ queue, currentSong, isPlaying, queueIndex, onClose, 
                   <div
                     key={`${song.id}-${i}`}
                     data-song-id={song.id}
-                    onClick={() => onPlay(song)}
+                    onClick={() => {
+                      if (currentSong?.id === song.id) {
+                        onTogglePlay();
+                      } else {
+                        onPlay(song);
+                      }
+                    }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',

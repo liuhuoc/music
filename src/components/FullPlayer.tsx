@@ -65,6 +65,10 @@ export function FullPlayer({
   const parsedLyrics = parseLyrics(song.lyrics);
   const currentLineIndex = getCurrentLineIndex(parsedLyrics, progress);
 
+  const displayProgress = isDragging ? dragValue : progress;
+  const progressPct = duration > 0 ? (displayProgress / duration) * 100 : 0;
+  const isSeekable = duration > 0;
+
   // 唱片旋转动画
   useEffect(() => {
     if (view !== 'disc') return;
@@ -106,29 +110,31 @@ export function FullPlayer({
   }, [currentLineIndex, isDragging, view]);
 
   const handleProgressClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!progressRef.current || !duration) return;
+    if (!progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
     onSeek(pct * duration);
-  }, [duration, onSeek]);
+  }, [duration, onSeek, isSeekable]);
 
   const handleProgressMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isSeekable) return;
     startDrag(e.clientX);
-  }, [duration]);
+  }, [isSeekable]);
 
   const handleProgressTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isSeekable) return;
     startDrag(e.touches[0].clientX);
-  }, [duration]);
+  }, [isSeekable]);
 
   const startDrag = useCallback((clientX: number) => {
     setIsDragging(true);
-    if (!progressRef.current || !duration) return;
+    if (!progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
     setDragValue(pct * duration);
-  }, [duration]);
+  }, [duration, isSeekable]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     updateDrag(e.clientX);
@@ -140,12 +146,12 @@ export function FullPlayer({
   }, [isDragging, duration]);
 
   const updateDrag = useCallback((clientX: number) => {
-    if (!isDragging || !progressRef.current || !duration) return;
+    if (!isDragging || !progressRef.current || !isSeekable) return;
     const rect = progressRef.current.getBoundingClientRect();
     const x = clientX - rect.left;
     const pct = Math.max(0, Math.min(1, x / rect.width));
     setDragValue(pct * duration);
-  }, [isDragging, duration]);
+  }, [isDragging, duration, isSeekable]);
 
   const handleEnd = useCallback(() => {
     if (isDragging) {
@@ -168,9 +174,6 @@ export function FullPlayer({
       };
     }
   }, [isDragging, handleMouseMove, handleTouchMove, handleEnd]);
-
-  const displayProgress = isDragging ? dragValue : progress;
-  const progressPct = duration ? (displayProgress / duration) * 100 : 0;
 
   const ModeIcon = playMode === 'loop' ? IconRepeat : playMode === 'single' ? IconRepeat1 : IconShuffle;
   const modeLabel = playMode === 'loop' ? '列表循环' : playMode === 'single' ? '单曲循环' : '随机播放';
@@ -667,7 +670,7 @@ export function FullPlayer({
 
       {/* Comments Panel */}
       {showComments && (
-        <CommentsPanel onClose={() => setShowComments(false)} />
+        <CommentsPanel song={song} onClose={() => setShowComments(false)} />
       )}
 
       {/* Timer Panel */}

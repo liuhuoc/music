@@ -160,6 +160,10 @@ export default function App() {
     player.play(song, queue);
   }, [player]);
 
+  const handleTogglePlay = useCallback(() => {
+    player.togglePlay();
+  }, [player]);
+
   const handleToggleFavorite = useCallback(() => {
     if (!actionSong) return;
     const wasFavorite = player.isFavorite(actionSong.id);
@@ -336,6 +340,7 @@ export default function App() {
               currentSong={player.currentSong}
               isPlaying={player.isPlaying}
               onPlay={handlePlay}
+              onTogglePlay={handleTogglePlay}
               downloadCount={player.downloadList.filter(d => d.status === 'completed').length}
             />
           )}
@@ -343,6 +348,9 @@ export default function App() {
             <SearchPage
               onNavigate={handleNavigate}
               onPlay={handlePlay}
+              onTogglePlay={handleTogglePlay}
+              currentSong={player.currentSong}
+              isPlaying={player.isPlaying}
             />
           )}
         </div>
@@ -402,6 +410,7 @@ export default function App() {
             onPlay={(song) => {
               handlePlay(song, player.queue);
             }}
+            onTogglePlay={handleTogglePlay}
             onRemoveFromQueue={player.removeFromQueue}
             onNavigate={handleNavigate}
           />
@@ -446,8 +455,8 @@ export default function App() {
         )}
 
         {/* Comments Panel */}
-        {showComments && (
-          <CommentsPanel onClose={() => setShowComments(false)} />
+        {showComments && player.currentSong && (
+          <CommentsPanel song={player.currentSong} onClose={() => setShowComments(false)} />
         )}
 
         {/* Timer Panel */}
